@@ -208,10 +208,14 @@ template builtin(id, sign, body) =
   builtins.add Builtin(ident: node id, signature: node args => sign, f: proc(args {.inject.}: Node): Node = body)
 
 builtin isTupleWith2Childs, true:
-  args.kind == nkTuple and args.len == 2
+  if args ==@ true: Node false
+  elif args.kind == nkTuple and args.len == 2: Node true
+  else: nkCall(nkIdent"isTupleWith2Childs", args)
 
 builtin isTupleWithTupleAndInt, true:
-  args.kind == nkTuple and args.len == 2 and args[0].kind == nkTuple and args[1].kind == nkInt
+  if args ==@ true: Node false
+  elif args.kind == nkTuple and args.len == 2 and args[0].kind == nkTuple and args[1].kind == nkInt: Node true
+  else: nkCall(nkIdent"isTupleWithTupleAndInt", args)
 
 builtin `==`, args.isTupleWith2Childs:
   args[0] ==@ args[1]
@@ -353,6 +357,7 @@ proc eval*(x: Node, syms = Syms()): Node =
   
     # `()` call
     let args2 = nkTuple(i, args)
+    echo "evaling `()`:\n", args2
     for s in builtins.reversed:
       if s.ident ==@ nkIdent("()") and s.signature[1].eval(syms.withHasValue(s.signature[0], args2)) ==@ true:
         return s.f(args2)
@@ -400,8 +405,12 @@ proc eval*(x: Node, syms = Syms()): Node =
 
 # optimize builtins signature
 for x in builtins.mitems:
+  let sig = x.signature
   x.signature = eval x.signature
-  echo x.signature
+  if not(sig ==@ x.signature):
+    echo "== optimized =="
+    echo "|> ", sig
+    echo "<| ", x.signature
 
 
 template ecen(body) =
