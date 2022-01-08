@@ -1,10 +1,13 @@
-import sequtils, strutils, strformat
+import sequtils, strutils, strformat, macros, hashes
 
 type
   Node* = ref object
     kind*: Node
     data*: seq[byte]
     childs*: seq[Node]
+
+
+proc hash*(x: Node): Hash = cast[int](x).hash
 
 
 proc asInt*(x: Node): int =
@@ -18,6 +21,36 @@ proc asString*(x: Node): string =
 proc asBool*(x: Node): bool =
   x.data.len != 0
 
+proc asFloat*(x: Node): float =
+  if x.data.len == float64.sizeof:
+    cast[ptr float64](x.data[0].addr)[].float
+  else: 0
+
+
+proc `{}`*(kind: Node, data: seq[byte]): Node =
+  ## node constructor
+  ## kind{data}
+  Node(kind: kind, data: data)
+
+proc `{}`*(kind: Node, data: openarray[byte]): Node =
+  ## node constructor
+  ## kind{data}
+  Node(kind: kind, data: data.toSeq)
+
+proc `{}`*[I](kind: Node, data: array[I, byte]): Node =
+  ## node constructor
+  ## kind{data}
+  Node(kind: kind, data: @data)
+
+proc `{}`*(kind: Node, data: string): Node =
+  ## node constructor
+  ## kind{data}
+  Node(kind: kind, data: cast[seq[byte]](data))
+
+proc `{}`*[T](kind: Node, data: T): Node =
+  ## node constructor
+  ## kind{data}
+  Node(kind: kind, data: cast[ptr array[T.sizeof, byte]](data.unsafeaddr)[].`@`)
 
 proc `()`*(kind: Node, childs: varargs[Node]): Node =
   ## node constructor
@@ -35,35 +68,65 @@ proc `()`*(kind: Node, childs: varargs[Node], data: seq[byte]): Node =
   Node(kind: kind, data: data, childs: childs.toSeq)
 
 
-var nkString* = Node(data: cast[seq[byte]]("string"))
-nkString.kind = nkString
+proc toBytes*[T](x: T): seq[byte] = toSeq cast[ptr array[T.sizeof, byte]](x.unsafeaddr)[]
+proc toBytes*(x: string): seq[byte] = cast[seq[byte]](x)
 
-converter toNode*(s: string): Node = nkString(data=cast[seq[byte]](s))
 
 var
-  nkInt*: Node = "int"
-  nkBool*: Node = "bool"
-  nkTuple*: Node = "tuple"
+  nkNodeKind* = Node()
+    ## node kind node
+    ## structure:
+    ##   name (nkString)
+    ##   data type (t*)
+  
+  tNone* = Node()
+    ## store nothing
+  tString* = Node()
+    ## whole seq[byte] as string
+  
+  nkString* = nkNodeKind()
 
-  nkNode*: Node = "node"
+
+converter toNode*(s: string): Node = nkString{s}
+
+nkNodeKind.childs = @[Node "node kind", tNone]
+nkNodeKind.kind = nkNodeKind
+
+nkString.childs = @[Node "string", tString]
+
+
+var
+  tInt* = Node()
+    ## bytes as int if len == int64.sizeof, else 0
+  tBool* = Node()
+    ## true if len != 0, else false
+  tFloat* = Node()
+    ## bytes as float if len == float64.sizeof, else 0
+
+  nkInt* = nkNodeKind("int", tInt)
+  nkBool* = nkNodeKind("bool", tBool)
+  nkFloat* = nkNodeKind("float", tFloat)
+
+  nkNode* = nkNodeKind("node", tNone)
     ## handle child as data (==% with 2 nodes is always true if they have single child)
-  nkSym*: Node = "sym"
+  nkSym* = nkNodeKind("sym", tNone)
     ## handle child equality (==@) as identity (==)
 
-  nkError*: Node = "error"
+  nkError* = nkNodeKind("error", tNone)
   
-  nkRecursion: Node = "recursion"
+  nkRecursion = nkNodeKind("recursion", tNone)
   
   ekNodeIndexOutOfBounds*: Node = "node index is out of bounds"
     ## index is out of bounds when getting a child node
 
-converter toNode*(i: int): Node =
-  var i = i.int64
-  nkInt(data=cast[ptr array[int64.sizeof, byte]](i.addr)[])
+
+converter toNode*(i: int): Node = nkInt{i.int64}
 
 converter toNode*(v: bool): Node =
-  if v: nkBool(data=[1'u8])
+  if v: nkBool{[1'u8]}
   else: nkBool()
+
+converter toNode*(i: float): Node = nkFloat{i.float64}
 
 
 proc contains[A, B](x: HSlice[A, B], i: BackwardsIndex): bool =
@@ -151,8 +214,13 @@ proc copy*(x: Node, markRecursion: Node = nil): Node =
 proc `==@`*(a, b: Node): bool =
   ## same tree
   ## true if trees has same data and kinds for each node
+  if a.kind == nkSym and b.kind == nkSym:
+    return a.childs == b.childs
+  
+  if a.kind != b.kind or a.data != b.data or a.childs.len != b.childs.len:
+    return false
+  
   result = true
-  if a.kind != b.kind or a.data != b.data or a.childs.len != b.childs.len: return false
   
   var stack = @[(a: a, b: b, h: (a: @[a], b: @[b]))]
   while stack.len != 0:
@@ -185,6 +253,26 @@ proc `==%`*(a, b: Node): bool =
       nb.add b
     stack[^1..^1] = zip(na, nb).mapit((it[0], it[1], (v.h.a & it[0], v.h.b & it[1])))
 
+proc `==<`*(a, b: Node): bool =
+  ## a is sub of b
+  ## true if begining of b data and childs is same to a
+  ## for nkNode it don't check childs
+  result = true
+  if a.kind != b.kind or a.data != b.data[0..a.data.high] or a.childs.len > b.childs.len: return false
+  if a.kind == nkNode: return true
+  
+  var stack = @[(a: a, b: b, h: (a: @[a], b: @[b]))]
+  while stack.len != 0:
+    let v = stack[^1]
+    var na, nb: seq[Node]
+    for (a, b) in zip(v.a.childs, v.b.childs):
+      if a in v.h.a: continue
+      if a.kind != b.kind or a.data != b.data[0..a.data.high] or a.childs.len > b.childs.len: return false
+      if a.kind == nkNode: continue
+      na.add a
+      nb.add b
+    stack[^1..^1] = zip(na, nb).mapit((it[0], it[1], (v.h.a & it[0], v.h.b & it[1])))
+
 proc `==$`*(a, b: Node): bool =
   ## same node
   ## true if nodes has same data and kind
@@ -196,6 +284,22 @@ proc `==~`*(a, b: Node): bool =
   a.kind == b.kind
 
 
+macro match*(x: Node) =
+  ## simple identity-based pattern matching
+  result = newTree(nnkIfStmt)
+  let selector = x[0]
+  for it in x[1..^1]:
+    case it.kind
+    of nnkElse, nnkElifBranch, nnkElifExpr, nnkElseExpr:
+      result.add it
+    of nnkOfBranch:
+      for jt in it[0..^2]:
+        let cond = newCall("==", selector, jt)
+        result.add newTree(nnkElifBranch, cond, it[^1])
+    else:
+      error "unexpected syntax", it
+
+
 proc `$`*(x: Node): string =
   ## builtin node formating
   ## TODO: make algorithm not recursive and do not use copy
@@ -203,15 +307,18 @@ proc `$`*(x: Node): string =
   if x.kind == nkRecursion: return "..."
 
   let x = copy(x, markRecursion=nkRecursion)
-  result = x.kind.asString
+  result = x.kind[0].asString
   
-  if x.kind == nkInt:
+  case x.kind[1]
+  of tInt:
     result = &"{result} {x.asInt}"
-  elif x.kind == nkString:
+  of tString:
     result.add " "
     result.addQuoted x.asString
-  elif x.kind == nkBool:
+  of tBool:
     result = &"{result} {x.asBool}"
+  of tFloat:
+    result = &"{result} {x.asFloat}"
   elif x.data.len != 0:
     result = &"{result} {x.data}"
   

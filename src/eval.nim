@@ -8,30 +8,31 @@ import ast
 # циклы
 
 var
-  nkNone*: Node = "none"
-  nkIdent*: Node = "ident"
+  nkNone* = nkNodeKind("none", tNone)
+  nkIdent* = nkNodeKind("ident", tString)
+  nkTuple* = nkNodeKind("tuple", tNone)
 
-  nkCall*: Node = "call"
+  nkCall* = nkNodeKind("call", tNone)
     ## structure:
     ##   callable
     ##   args (single node)
   
-  nkSequence*: Node = "sequence"
+  nkSequence* = nkNodeKind("sequence", tNone)
     ## only last node eval of sequence is returned
   
-  nkIfStmt*: Node = "if stmt"
+  nkIfStmt* = nkNodeKind("if stmt", tNone)
     ## structure:
     ##   nkIfBranch...
     ##   [nkElseBranch]
-  nkIfBranch*: Node = "if"
+  nkIfBranch* = nkNodeKind("if", tNone)
     ## structure:
     ##   condition
     ##   statement
-  nkElseBranch*: Node = "else"
+  nkElseBranch* = nkNodeKind("else", tNone)
     ## structure:
     ##   statement
 
-  nkLet*: Node = "let"
+  nkLet* = nkNodeKind("let", tNone)
     ## let existance block
     ## expr returned
     ## structure:
@@ -39,14 +40,14 @@ var
     ##   value (will be immediately evaled)
     ##   expr (can use same ident as value)
   
-  nkExternLet*: Node = "extern let"
+  nkExternLet* = nkNodeKind("extern let", tNone)
     ## let to call later
     ## can be called
     ## structure:
     ##   ident
     ##   expr (can use same ident as value)
   
-  nkProc*: Node = "proc def"
+  nkProc* = nkNodeKind("proc def", tNone)
     ## proc existance block
     ## let with overloading
     ## structure:
@@ -92,7 +93,7 @@ macro node(x): Node =
       return quote do: Node(true)
 
     of Ident(strVal: @name):
-      return quote do: nkIdent(`name`)
+      return quote do: nkIdent{`name`}
 
     of AccQuoted[all @n]:
       return buildAst:
@@ -175,7 +176,7 @@ macro node(x): Node =
     of BracketExpr[@a, all @n]:
       return buildAst:
         call ident"nkCall":
-          call ident"nkIdent", newLit "[]"
+          call ident"{}", ident"nkIdent", newLit "[]"
           call ident"nkTuple":
             cv(a)
             for x in n: cv(x)

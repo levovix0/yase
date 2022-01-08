@@ -6,4 +6,4 @@ srcDir        = "src"
 bin           = @["yase"]
 
 requires "nim >= 1.4.8"
-requires "fusion"
+requires "fusion", "regex"
