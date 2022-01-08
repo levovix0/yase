@@ -1,5 +1,19 @@
-# This is just an example to get you started. A typical binary package
-# uses this file as the main entry point of the application.
+import ast, eval2, gui
 
-when isMainModule:
-  echo("Hello, World!")
+discard eval nkWindow(
+  "yase",
+  gkSequence(
+    gkFill(rgb(32, 32, 32)),
+
+    gkBlock(
+      gkFillColor(rgb(100, 100, 255)),
+      gkMove(200, 100),
+      gkScale(0.5, 0.5),
+      gkRotate(45),
+      gkRect(0, 0, 100, 100),
+    ),
+
+    gkFillColor(rgb(100, 255, 100)),
+    gkRect(0, 0, 100, 100),
+  ),
+)

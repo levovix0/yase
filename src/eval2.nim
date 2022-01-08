@@ -1,5 +1,13 @@
 import tables, options, algorithm
 import ast
+export tables
+
+type
+  Scope* = ref object
+    parent*: Scope ## nilable
+    values*: Table[Node, Node]
+
+  EvalProc* = proc(x: Node, scope = Scope()): Node
 
 var
   nkNone* = nkNodeKind("none", tNone)
@@ -60,10 +68,6 @@ var
     ##   (ident def | untyped ident def)... (args)
 
 
-type Scope* = ref object
-  parent*: Scope ## nilable
-  values*: Table[Node, Node]
-
 proc `[]`*(scope: Scope, s: Node): Option[Node] =
   var scope = scope
   while scope != nil:
@@ -86,45 +90,51 @@ proc newScope*(parent: Scope = nil): Scope =
 
 var builtins*: Table[Node, proc(x: Node): Node]
 
-
 proc isValue(x: Node): bool =
   x.kind in [nkInt, nkString, nkBool, nkNode, nkProc]
 
 
+var evalTable*: Table[Node, EvalProc]
+
+template onKind*(kind: Node, body) =
+  evalTable[kind] = proc(x {.inject.}: Node, scope {.inject.}: Scope = Scope()): Node =
+    result = nkNone()
+    body
+
+
 proc eval*(x: Node, scope = Scope()): Node =
-  result = nkNone()
+  try: evalTable[x.kind](x, scope)
+  except: x
+
+
+onKind nkIdent:
+  return scope[x].get(x)
+
+onKind nkCall:
+  let f = x[0].eval
+
+  let sf = scope[f]
+  if sf.isSome and sf.get.kind == nkProc:
+    let f = sf.get
+    let v = x[1].eval
+    ## todo
   
-  case x.kind
-  of nkIdent:
-    return scope[x].get(x)
+  if builtins.hasKey f:
+    let v = x[1].eval
+    if not x.isValue: return
+    return builtins[f](v)
 
-  of nkCall:
-    let f = x[0].eval
+onKind nkVar:
+  let (s, v) = (x[0], x[1].eval)
+  for k, v in scope.values:
+    if k ==@ s:
+      scope.values[k] = v
+  scope.values[s] = v
 
-    let sf = scope[f]
-    if sf.isSome and sf.get.kind == nkProc:
-      let f = sf.get
-      let v = x[1].eval
-      ## todo
-    
-    if builtins.hasKey f:
-      let v = x[1].eval
-      if not x.isValue: return
-      return builtins[f](v)
-  
-  of nkVar:
-    let (s, v) = (x[0], x[1].eval)
-    for k, v in scope.values:
-      if k ==@ s:
-        scope.values[k] = v
-    scope.values[s] = v
+onKind nkSet:
+  scope.values[x[0]] = x[1].eval
 
-  of nkSet:
-    scope.values[x[0]] = x[1].eval
-  
-  of nkScope:
-    var scope = scope.newScope
-    for x in x:
-      result = x.eval(scope)
-
-  else: return
+onKind nkScope:
+  var scope = scope.newScope
+  for x in x:
+    result = x.eval(scope)
