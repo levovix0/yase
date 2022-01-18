@@ -5,7 +5,7 @@ discard eval nkWindow(
   gkSequence(
     gkFill(rgb(32, 32, 32)),
 
-    gkBlock(
+    gkFrame(
       gkFillColor(rgb(100, 100, 255)),
       gkMove(200, 100),
       gkScale(0.5, 0.5),

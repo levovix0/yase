@@ -2,11 +2,17 @@ import siwin, pixie
 import ast, eval2
 export pixie
 
+type
+  DrawScope* = ref object
+    parent*: DrawScope ## nilable
+    scope*: Scope
+    clipRect*: Rect
+
 let
   tRgba* = Node()
     ## first 4 bytes are r, g, b, a in 0..255 range
 
-  gkColor* = nkNodeKind("color", tRgba)
+  nkColor* = nkNodeKind("color", tRgba)
     ## rgba color
 
   gkFillColor* = nkNodeKind("fill color =", tNone)
@@ -46,9 +52,26 @@ let
   
   gkSequence* = nkNodeKind("sequence", tNone)
   
-  gkBlock* = nkNodeKind("block", tNone)
+  gkFrame* = nkNodeKind("frame", tNone)
     ## same as sequence, but pushes context before drawing, and pops it after
   
+  gkText* = nkNodeKind("text", tNone)
+    ## structure:
+    ##   x
+    ##   y
+    ##   text (string)
+    ##   h (font size)
+    ##   bg (nkColor) | nkNone
+
+  gkClip* = nkNodeKind("clip", tNone)
+    ## clip content (rectangle shape)
+    ## structure:
+    ##   x
+    ##   y
+    ##   w
+    ##   h
+    ##   content
+
   nkWindow* = nkNodeKind("window", tNone)
     ## creates window and run event loop
     ## structure:
@@ -57,16 +80,16 @@ let
 
 
 converter toNode*(c: ColorRgba): Node =
-  gkColor{c}
+  nkColor{c}
 
 converter toNode*(c: ColorRgbx): Node =
-  gkColor{c.rgba}
+  nkColor{c.rgba}
 
 converter toNode*(c: ColorRgb): Node =
-  gkColor{rgba(c.r, c.g, c.b, 255)}
+  nkColor{rgba(c.r, c.g, c.b, 255)}
 
 converter toNode*(c: Color): Node =
-  gkColor{c.rgba}
+  nkColor{c.rgba}
 
 proc asRgba*(x: Node): ColorRgba =
   if x.data.len == ColorRgba.sizeof:
@@ -78,10 +101,13 @@ proc toFloat(x: Node): float =
   else: x.asFloat
 
 
-proc draw*(r: Context, x: Node) =
+proc draw*(r: Context, x: Node, ds: DrawScope) =
+  template draw(x): untyped = r.draw x, ds
+  template eval(x): untyped = x.eval(ds.scope)
+
   case x.kind
   of gkSequence:
-    for x in x: r.draw x
+    for x in x: draw x
   
   of gkFillColor:
     r.fillStyle = x[0].eval.asRgba
@@ -92,9 +118,9 @@ proc draw*(r: Context, x: Node) =
   of gkRect:
     r.fillRect x[0].eval.toFloat, x[1].eval.toFloat, x[2].eval.toFloat, x[3].eval.toFloat
   
-  of gkBlock:
+  of gkFrame:
     r.save
-    for x in x: r.draw x
+    for x in x: draw x
     r.restore
   
   of gkMove:
@@ -105,6 +131,12 @@ proc draw*(r: Context, x: Node) =
   
   of gkRotate:
     r.rotate x[0].eval.toFloat
+  
+  of gkText:
+    ## todo
+  
+  of gkClip:
+    ## todo
   
   else: discard
 
@@ -117,7 +149,7 @@ onKind nkWindow:
       image = newImage(w, h)
 
     render:
-      image.newContext.draw x[1].eval
+      image.newContext.draw x[1].eval, DrawScope(scope: scope)
       window.drawImage image.data
 
     keyup esc:
