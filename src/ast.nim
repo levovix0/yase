@@ -7,7 +7,7 @@ type
     childs*: seq[Node]
 
 
-proc hash*(x: Node): Hash = cast[int](x).hash
+proc hash*(x: Node): Hash = x.data.len.hash
 
 
 proc asInt*(x: Node): int =
@@ -284,7 +284,11 @@ proc `==~`*(a, b: Node): bool =
   a.kind == b.kind
 
 
-macro match*(x: Node) =
+proc `&`*(a: Node, b: openarray[Node]): Node =
+  a.kind(a.childs & b.toSeq)
+
+
+macro `case`*(x: Node) =
   ## simple identity-based pattern matching
   result = newTree(nnkIfStmt)
   let selector = x[0]

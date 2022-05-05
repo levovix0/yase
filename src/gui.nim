@@ -1,4 +1,4 @@
-import siwin, pixie
+import siwin, pixie, vmath
 import ast, eval2
 export pixie
 
@@ -77,6 +77,18 @@ let
     ## structure:
     ##   title
     ##   draw
+    ##   onEvent (e:ek* in scope)
+  
+  ekKeyup* = nkNodeKind("keyup", tNone)
+    ## structure:
+    ##   keycode
+  
+  ekKeydown* = nkNodeKind("keydown", tNone)
+    ## structure:
+    ##   keycode
+  
+  ekTick* = nkNodeKind("tick", tNone)
+    ## structure:
 
 
 converter toNode*(c: ColorRgba): Node =
@@ -102,8 +114,8 @@ proc toFloat(x: Node): float =
 
 
 proc draw*(r: Context, x: Node, ds: DrawScope) =
-  template draw(x): untyped = r.draw x, ds
-  template eval(x): untyped = x.eval(ds.scope)
+  proc draw(x: Node) = r.draw x, ds
+  proc eval(x: Node): Node = x.eval(ds.scope)
 
   case x.kind
   of gkSequence:
@@ -138,19 +150,44 @@ proc draw*(r: Context, x: Node, ds: DrawScope) =
   of gkClip:
     ## todo
   
-  else: discard
+  else: discard x.eval
 
 
 onKind nkWindow:
-  var image: Image
-  
-  run newWindow(title=x[0].asString):
-    resize as (w, h):
-      image = newImage(w, h)
+  var window = newWindow(title = x[0].eval.asString, w = 600, h = 400)
+  var image = newImage(600, 400)
+  discard eval nkVar(!w, 600.0)
+  discard eval nkVar(!h, 400.0)
 
-    render:
-      image.newContext.draw x[1].eval, DrawScope(scope: scope)
-      window.drawImage image.data
+  proc push(e: Node) =
+    let scope = scope.newScope
+    scope.values[!e] = e
+    discard x[2].eval(scope)
 
-    keyup esc:
-      close window
+  window.onRender = proc(e: RenderEvent) =
+    image.newContext.draw x[1].eval, DrawScope(
+      scope: scope,
+      clipRect: rect(vec2(), ivec2(window.size.x.int32, window.size.y.int32).vec2),
+    )
+    window.drawImage image.data
+
+  window.onResize = proc(e: ResizeEvent) =
+    if e.size.x * e.size.y == 0: return
+    image = newImage(e.size.x, e.size.y)
+    discard eval nkSet(!w, e.size.x.float)
+    discard eval nkSet(!h, e.size.x.float)
+    redraw window
+
+  window.onKeyDown = proc(e: KeyEvent) =
+    push ekKeydown(e.key.ord)
+    redraw window
+
+  window.onKeyUp = proc(e: KeyEvent) =
+    push ekKeyup(e.key.ord)
+    redraw window
+
+  window.onTick = proc(e: TickEvent) =
+    push ekTick()
+    redraw window
+
+  run window
