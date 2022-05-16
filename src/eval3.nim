@@ -1,31 +1,6 @@
 import tables
 import ast
 
-type
-  Evalable* = object
-    case isBuiltin*: bool
-    of true:
-      f: proc(x: Node): Node
-    of false:
-      n: Node
-
-  EvalTable* = Table[Node, Evalable]
-
-var evalTable*: EvalTable
-
-proc eval*(x: Node): Node =
-  try:
-    let e = evalTable[x.kind]
-    if e.isBuiltin: e.f(x)
-    else: (e.n & x).eval
-  except: x
-
-
-template builtin(name, node, body) {.dirty.} =
-  let name* = node
-  evalTable[name] = Evalable(isBuiltin: true, f: proc(x: Node): Node = body)
-
-
 let
   cNone* = Node "none"
   cTrue* = Node "true"
@@ -34,11 +9,22 @@ let
   eIf* = nkNodeKind("if", tNone)
   eElse* = nkNodeKind("else", tNone)
 
-  erIllformedAst = "illformed ast"
+  erIllformedAst* = Node "illformed ast"
 
 
 converter toNode*(x: bool): Node =
   if x: cTrue else: cFalse
+
+
+var builtins*: Table[Node, proc(x: Node): Node]
+
+proc eval*(x: Node): Node =
+  try: builtins[x.kind](x)
+  except: x
+
+template builtin*(name, node, body) {.dirty.} =
+  let name* = node
+  builtins[name] = proc(x: Node): Node = body
 
 
 builtin eSeq, nkNodeKind("eval sequence, return last", tNone):
@@ -65,3 +51,8 @@ builtin eWhile, nkNodeKind("while", tNone):
   result = cNone
   while x[0].eval == cTrue:
     result = x[1].eval
+
+builtin eConcat, nkNodeKind("concat", tNone):
+  if x.len < 1:
+    return nkError(erIllformedAst, x)
+  return x[0] & x.childs[1..^1]

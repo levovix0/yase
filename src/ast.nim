@@ -7,7 +7,7 @@ type
     childs*: seq[Node]
 
 
-proc hash*(x: Node): Hash = x.data.len.hash
+proc hash*(x: Node): Hash = cast[int](x).hash
 
 
 proc asInt*(x: Node): int =
@@ -75,11 +75,9 @@ var
     ## structure:
     ##   name (nkString)
     ##   data type (t*)
-  
+
   tNone* = Node()
-    ## store nothing
   tString* = Node()
-    ## whole seq[byte] as string
   
   nkString* = nkNodeKind()
 
@@ -91,12 +89,16 @@ nkNodeKind.kind = nkNodeKind
 
 nkString.childs = @[Node "string", tString]
 
+tNone.kind = nkString
+tNone.data = toBytes "store nothing"
+
+tString.kind = nkString
+tString.data = toBytes "store string"
+
 
 var
-  tInt* = Node()
-    ## bytes as int if len == int64.sizeof, else 0
-  tFloat* = Node()
-    ## bytes as float if len == float64.sizeof, else 0
+  tInt* = "store int64"
+  tFloat* = "store float64"
 
   nkInt* = nkNodeKind("int", tInt)
   nkFloat* = nkNodeKind("float", tFloat)
@@ -190,6 +192,7 @@ proc `&`*(a: Node, b: varargs[Node]): Node =
 proc `$`*(x: Node): string =
   ## builtin node formating
   ## TODO: make algorithm not recursive and do not use copy
+  if x == nil: return "nil"
   if x.kind == nil: return "nil"
   if x.kind == nkRecursion: return "..."
 
@@ -203,8 +206,6 @@ proc `$`*(x: Node): string =
     elif t == tString:
       result.add " "
       result.addQuoted x.asString
-    elif t == tBool:
-      result = &"{result} {x.asBool}"
     elif t == tFloat:
       result = &"{result} {x.asFloat}"
     elif x.data.len != 0:
