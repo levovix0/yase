@@ -1,4 +1,4 @@
-import tables, options, sequtils
+import tables, options
 import ast, matching
 export tables
 
@@ -102,12 +102,6 @@ proc newScope*(parent: Scope = nil): Scope =
 template `!`*(x): Node = nkIdent{astToStr(x)}
 
 
-var builtins*: Table[Node, proc(x: Node): Node]
-
-proc isValue(x: Node): bool =
-  x.kind in [nkInt, nkString, nkBool, nkNode, nkProc]
-
-
 var evalTable*: Table[Node, EvalProc]
 
 template onKind*(kind: Node, body) =
@@ -134,23 +128,6 @@ onKind nkScopeLookup:
     for k, v in scope.values:
       if (k >- key) ==% true and (v >- val) ==% true:
         return v
-  
-
-onKind nkCall:
-  let f = x[0].eval
-
-  # proc call
-  if f.kind == nkProc:
-    let v = x.childs[1..^1].mapit(it.eval)
-    for i, (v, s) in zip(v, f.childs[1..^1]):
-      if v !>- s:
-        return nkError("signature missmatch", i, v, s)
-  
-  # builtin call
-  if builtins.hasKey f:
-    let v = x[1].eval
-    if not x.isValue: return
-    return builtins[f](v)
   
 
 onKind nkScope:

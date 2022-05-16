@@ -1,3 +1,4 @@
+import sequtils
 import siwin
 import ast, eval2, gui
 
@@ -14,7 +15,16 @@ let
 
   stdNot* = nkNodeKind("not", tNone)
 
-  stdKind* = nkNodeKind(".kind", tNone)
+  stdKind* = nkNodeKind("kind(Node)", tNone)
+  stdLen* = nkNodeKind("len(Node)", tNone)
+  stdPass* = nkNodeKind("pass(Node)", tNone)
+  stdEval* = nkNodeKind("eval(Node)", tNone)
+  `std[]`* = nkNodeKind("Node[int]", tNone)
+  stdNewNode* = nkNodeKind("newNode(varargs[Node])", tNone)
+
+  stdRgb* = nkNodeKind("rgb(int, int, int)", tNone)
+
+  stdOnKind* = nkNodeKind("onKind(kind: Node, body: Node)", tNone)
 
 
 onKind stdEcho:
@@ -27,24 +37,24 @@ onKind stdEcho:
 onKind stdEqual:
   return x[0].eval ==@ x[1].eval
 
-onKind stdKind:
-  return x[0].eval.kind()
+template mkNumericBinaryOp(k, f) {.dirty.} =
+  onKind k:
+    let
+      a = x[0].eval
+      b = x[1].eval
+    if a.kind != b.kind: return nkError("missmatch kinds", a, b)
+    return if a.kind == nkFloat:
+      Node f(a.asFloat, b.asFloat)
+    elif a.kind == nkInt:
+      Node f(a.asInt, b.asInt)
+    else:
+      nkError("invalid kind", a)
+  template f*(a, b: Node): Node = k(a, b)
 
-onKind stdBinaryPlus:
-  return x[0].eval.asFloat + x[1].eval.asFloat
-template `+`*(a, b: Node): Node = stdBinaryPlus(a, b)
-
-onKind stdBinaryMinus:
-  return x[0].eval.asFloat - x[1].eval.asFloat
-template `-`*(a, b: Node): Node = stdBinaryMinus(a, b)
-
-onKind stdBinaryProd:
-  return x[0].eval.asFloat * x[1].eval.asFloat
-template `*`*(a, b: Node): Node = stdBinaryProd(a, b)
-
-onKind stdBinaryDivide:
-  return x[0].eval.asFloat / x[1].eval.asFloat
-template `/`*(a, b: Node): Node = stdBinaryDivide(a, b)
+mkNumericBinaryOp stdBinaryPlus, `+`
+mkNumericBinaryOp stdBinaryMinus, `-`
+mkNumericBinaryOp stdBinaryProd, `*`
+mkNumericBinaryOp stdBinaryDivide, `/`
 
 
 onKind stdUnaryMinus:
@@ -55,6 +65,42 @@ template `-`*(a: Node): Node = stdUnaryMinus(a)
 onKind stdNot:
   return not x[0].eval.asBool
 template `not`*(a: Node): Node = stdNot(a)
+
+
+onKind stdKind:
+  return x[0].eval.kind()
+
+onKind stdLen:
+  return x[0].eval.len
+
+onKind stdPass:
+  return x[0]
+
+onKind stdEval:
+  return x[0].eval.eval
+
+onKind `std[]`:
+  return x[0].eval[x[1].eval.asInt]
+
+onKind stdNewNode:
+  return (x[0].eval)(x.childs[1..^1].mapit(it.eval))
+
+
+onKind stdRgb:
+  return rgb(
+    x[0].eval.asInt.min(255).max(0).byte,
+    x[1].eval.asInt.min(255).max(0).byte,
+    x[2].eval.asInt.min(255).max(0).byte
+  )
+
+
+onKind stdOnKind:
+  let y = x
+  onKind y[0].eval:
+    return nkScope(
+      @[nkVar(!x, x)] &
+      y.childs[1..^1]
+    ).eval
 
 
 discard eval nkScope(
@@ -68,6 +114,20 @@ discard eval nkScope(
   nkVar(!d_pressed, false),
   nkVar(!q_pressed, false),
   nkVar(!e_pressed, false),
+  nkVar(!currentNode, stdPass(nkError("a", "b", "c", "d"))),
+  nkVar(!col, nkNone()),
+
+  nkVar(!onCurrentNodeChanged, stdPass(
+    nkSet(!col, stdLen(!currentNode) * 32),
+  )),
+
+  stdEval(!onCurrentNodeChanged),
+
+  nkVar(!nkProperty, stdPass(nkNodeKind("property", tNone))),
+  nkVar(!nkTuple, stdPass(nkNodeKind("property", tNone))),
+  stdOnKind(!nkProperty,
+    nkVar(`std[]`(!x, 0), ),
+  ),
 
   nkWindow(
     "yase",
@@ -77,7 +137,7 @@ discard eval nkScope(
       gkMove(- !x, - !y),
 
       gkFrame(
-        gkFillColor(rgb(100, 100, 255)),
+        gkFillColor(stdRgb(!col, !col, !col)),
         gkMove(200, 100),
         gkScale(0.5, 0.5),
         gkRotate(45),
@@ -87,57 +147,60 @@ discard eval nkScope(
       gkFillColor(rgb(100, 255, 100)),
       gkRect(0, 0, 100, 100),
     ),
-    nkScope(block:
-      # stdEcho(!e),
-      template then(x, body): Node =
-        nkIf( stdEqual(!e, x),
-          body
-        )
+    nkScope(
+      nkIfStmt(nkIf( stdNot(stdEqual(stdKind(!e), ekTick())),
+        #stdEcho(!e),
+      )),
+      block:
+        template then(x, body): Node =
+          nkIf( stdEqual(!e, x),
+            body
+          )
 
-      nkIfStmt(
-        ekTick().then nkScope(
-          nkIfStmt(nkIf( !w_pressed, nkScope(
-            nkSet(!y, !y - 10.0 / !scale),
-          ))),
-          nkIfStmt(nkIf( !a_pressed, nkScope(
-            nkSet(!x, !x - 10.0 / !scale),
-          ))),
-          nkIfStmt(nkIf( !s_pressed, nkScope(
-            nkSet(!y, !y + 10.0 / !scale),
-          ))),
-          nkIfStmt(nkIf( !d_pressed, nkScope(
-            nkSet(!x, !x + 10.0 / !scale),
-          ))),
-          nkIfStmt(nkIf( !q_pressed, nkScope(
-            nkSet(!scale, !scale / 1.05),
-            nkSet(!x, !x - !w / !scale * 0.025),
-            nkSet(!y, !y - !h / !scale * 0.025),
-          ))),
-          nkIfStmt(nkIf( !e_pressed, nkScope(
-            nkSet(!scale, !scale * 1.05),
-            nkSet(!x, !x + !w / !scale * 0.025),
-            nkSet(!y, !y + !h / !scale * 0.025),
-          ))),
+        nkIfStmt(
+          ekTick().then nkScope(
+            nkIfStmt(nkIf( !w_pressed, nkScope(
+              nkSet(!y, !y - 10.0 / !scale),
+            ))),
+            nkIfStmt(nkIf( !a_pressed, nkScope(
+              nkSet(!x, !x - 10.0 / !scale),
+            ))),
+            nkIfStmt(nkIf( !s_pressed, nkScope(
+              nkSet(!y, !y + 10.0 / !scale),
+            ))),
+            nkIfStmt(nkIf( !d_pressed, nkScope(
+              nkSet(!x, !x + 10.0 / !scale),
+            ))),
+            nkIfStmt(nkIf( !q_pressed, nkScope(
+              nkSet(!x, !x + (!w / !scale - !w / !scale * 1.05) / 2.0),
+              nkSet(!y, !y + (!h / !scale - !h / !scale * 1.05) / 2.0),
+              nkSet(!scale, !scale / 1.05),
+            ))),
+            nkIfStmt(nkIf( !e_pressed, nkScope(
+              nkSet(!x, !x + (!w / !scale - !w / !scale / 1.05) / 2.0),
+              nkSet(!y, !y + (!h / !scale - !h / !scale / 1.05) / 2.0),
+              nkSet(!scale, !scale * 1.05),
+            ))),
+          ),
+
+          ekKeyup(Key.w.ord).then nkSet(!w_pressed, false),
+          ekKeydown(Key.w.ord).then nkSet(!w_pressed, true),
+
+          ekKeyup(Key.a.ord).then nkSet(!a_pressed, false),
+          ekKeydown(Key.a.ord).then nkSet(!a_pressed, true),
+
+          ekKeyup(Key.s.ord).then nkSet(!s_pressed, false),
+          ekKeydown(Key.s.ord).then nkSet(!s_pressed, true),
+
+          ekKeyup(Key.d.ord).then nkSet(!d_pressed, false),
+          ekKeydown(Key.d.ord).then nkSet(!d_pressed, true),
+
+          ekKeyup(Key.q.ord).then nkSet(!q_pressed, false),
+          ekKeydown(Key.q.ord).then nkSet(!q_pressed, true),
+
+          ekKeyup(Key.e.ord).then nkSet(!e_pressed, false),
+          ekKeydown(Key.e.ord).then nkSet(!e_pressed, true),
         ),
-
-        ekKeyup(Key.w.ord).then nkSet(!w_pressed, false),
-        ekKeydown(Key.w.ord).then nkSet(!w_pressed, true),
-
-        ekKeyup(Key.a.ord).then nkSet(!a_pressed, false),
-        ekKeydown(Key.a.ord).then nkSet(!a_pressed, true),
-
-        ekKeyup(Key.s.ord).then nkSet(!s_pressed, false),
-        ekKeydown(Key.s.ord).then nkSet(!s_pressed, true),
-
-        ekKeyup(Key.d.ord).then nkSet(!d_pressed, false),
-        ekKeydown(Key.d.ord).then nkSet(!d_pressed, true),
-
-        ekKeyup(Key.q.ord).then nkSet(!q_pressed, false),
-        ekKeydown(Key.q.ord).then nkSet(!q_pressed, true),
-
-        ekKeyup(Key.e.ord).then nkSet(!e_pressed, false),
-        ekKeydown(Key.e.ord).then nkSet(!e_pressed, true),
-      )
     ),
   )
 )
