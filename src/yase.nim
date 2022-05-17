@@ -131,6 +131,28 @@ builtin godPanel, nkNodeKind("god panel", tNone):
           except: 0
       of '~':
         discard
+      of 'h':
+        eraseScreen()
+        setCursorPos(0, 0)
+        echo """
+ q quit
+ s move down
+ w move up
+ a move to parent
+ d move to child
+ D delete child
+ S save
+ b set buffer to current node
+ k set kind to buffer node
+ i insert child from buffer
+ n create new node on buffer
+ e eval current node to buffer
+ " read string to buffer
+ I read int to buffer
+ F read float to buffer
+ h help
+ ~ do something"""
+        discard getch()
       else: discard
 
   except:

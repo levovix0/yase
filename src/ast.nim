@@ -227,11 +227,17 @@ proc serialize*(n: Node, builtinNodes: openarray[Node]): string =
   d[n] = 0
   l.add n
 
-  for n in n.tree:
-    if n notin d:
-      d[n] = i
-      inc i
-      l.add n
+  block builtin:
+    var stack = @[(x: n, h: @[n])]
+    while stack.len != 0:
+      let v = stack[^1]
+      let n = v.x.childs.filterit(it notin v.h and it notin builtinNodes)
+      for x in n:
+        if x notin d:
+          d[x] = i
+          inc i
+          l.add x
+      stack[^1..^1] = n.mapit((it, v.h & it))
 
   proc toString(n: Node): string =
     let a = @[d[n.kind], n.childs.len.int32, n.data.len.int32] & n.childs.mapit(d[it])
