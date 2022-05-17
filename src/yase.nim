@@ -10,7 +10,6 @@ builtin godPanel, nkNodeKind("god panel", tNone):
   try:
     if x.len < 1: return nkError(erIllformedAst, x)
     let rec = 2
-    hideCursor()
 
     proc head(x: Node, indent: int): string =
       if x == nil: return "nil"
