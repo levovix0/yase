@@ -1,8 +1,143 @@
-import tables, sequtils
-import cligen
+import os, strutils, strformat
+import cligen, terminal
 import ast, eval3
 
-let builtinNodes = [
+var builtinNodes: seq[Node]
+
+let nkSeq = nkNodeKind("seq", tNone)
+
+builtin godPanel, nkNodeKind("god panel", tNone):
+  try:
+    if x.len < 1: return nkError(erIllformedAst, x)
+    let rec = 2
+    hideCursor()
+
+    proc head(x: Node, indent: int): string =
+      if x == nil: return "nil"
+      if x.kind == nil: return "nil"
+
+      result = if x.kind.childs.len > 0: x.kind.childs[0].asString else: "undocumented Node"
+
+      if x.kind.childs.len > 1:
+        let t = x.kind.childs[1]
+        if t == tInt:
+          result = &"{result} {x.asInt}"
+        elif t == tString:
+          result.add " "
+          result.addQuoted x.asString
+        elif t == tFloat:
+          result = &"{result} {x.asFloat}"
+        elif x.data.len != 0:
+          result = &"{result} {x.data}"
+      elif x.data.len != 0:
+          result = &"{result} {x.data}"
+
+      if x.childs.len > 0:
+        result = result & ":"
+
+      let id = cast[int](x).toHex
+      let r = result
+      let w = terminalWidth()
+      result = " ".repeat(w)
+      result[indent.min(w-1)..(indent + r.high).min(w-1)] = r[0..((indent + r.high).min(w-1) - indent.min(w-1))]
+      if w > id.len + 2:
+        result[^(id.len)..^1] = id
+        result[^(id.len + 1)] = ' '
+
+
+    proc drawUi(x: Node, buffer: Node, i: int) =
+      eraseScreen()
+      setCursorPos(0, 0)
+      var ii = 0
+      var s = @[x.head(0)]
+      for i2, x in x.childs:
+        if i2+1 == i:
+          ii = s.len
+
+        proc head2(x: Node, r: int): seq[string] =
+          result = @[x.head(r * 2)]
+          if r < rec:
+            for x in x:
+              result.add x.head2(r + 1)
+        s.add x.head2(1)
+
+      for i2, s in s:
+        if i2 == ii:
+          styledEcho(bgWhite, fgBlack, s, resetStyle)
+        else:
+          styledEcho(fgWhite, bgBlack, s, resetStyle)
+
+      let h = terminalHeight()
+      setCursorPos(0, h-3)
+      styledEcho(fgWhite, bgBlack, " ".repeat(terminalWidth()), resetStyle)
+      styledEcho(fgWhite, bgBlack, buffer.head(0), resetStyle)
+
+    let root = x[0]
+    var currentNode = root
+    var path: seq[Node]
+    var i: int
+    var buffer: Node
+
+    template selectedNode: Node =
+      if i == 0: currentNode else: currentNode[i-1]
+
+    while true:
+      drawUi(currentNode, buffer, i)
+
+      let k = getch()
+      case k
+      of 'q': break
+      of 's':
+        inc i
+        if i > currentNode.len: i = 0
+      of 'w':
+        dec i
+        if i < 0: i = currentNode.len
+      of 'a':
+        if path.len == 0: continue
+        currentNode = path[^1]
+        path.del path.high
+        i = 0
+      of 'd':
+        if i == 0: continue
+        path.add currentNode
+        currentNode = currentNode[i-1]
+        i = 0
+      of 'D':
+        if i == 0: continue
+        currentNode.childs.delete i-1
+        if i > currentNode.len: i = currentNode.len
+      of 'S':
+        writeFile "main.yase", root.serialize(builtinNodes)
+      of 'b':
+        buffer = selectedNode
+      of 'k':
+        selectedNode.kind = buffer
+      of 'i':
+        currentNode.childs.insert buffer, i
+      of 'n':
+        buffer = nkSeq()
+      of 'e':
+        buffer = eval selectedNode
+      of '"':
+        buffer = stdin.readLine
+      of 'I':
+        buffer =
+          try: parseInt stdin.readLine
+          except: 0
+      of 'F':
+        buffer =
+          try: parseFloat stdin.readLine
+          except: 0
+      of '~':
+        discard
+      else: discard
+
+  except:
+    echo getCurrentExceptionMsg()
+    echo getStackTrace()
+
+builtinNodes = @[
   nkNodeKind,
   tNone,
   tString,
@@ -23,74 +158,16 @@ let builtinNodes = [
   eIfStmt,
   eWhile,
   eConcat,
+
+  godPanel,
+  nkSeq,
 ]
 
-proc serialize*(n: Node): string =
-  var d: Table[Node, int32]
-  var l: seq[Node]
-  var i = 1.int32
-  for i, n in builtinNodes:
-    d[n] = -i.int32 - 1
-  d[n] = 0
-  l.add n
-
-  for n in n.tree:
-    if n notin d:
-      d[n] = i
-      inc i
-      l.add n
-
-  proc toString(n: Node): string =
-    let a = @[d[n.kind], n.childs.len.int32, n.data.len.int32] & n.childs.mapit(d[it])
-    result.setLen a.len * int32.sizeof + n.data.len
-    copyMem(result[0].addr, a[0].unsafeaddr, a.len * int32.sizeof)
-    if n.data.len > 0:
-      copyMem(result[a.len * int32.sizeof].addr, n.data[0].unsafeaddr, n.data.len)
-
-  for i, n in l:
-    result.add n.toString
-
-proc deserialize*(s: string): Node =
-  var d: Table[int32, Node]
-  for i, n in builtinNodes:
-    d[-i.int32 - 1] = n
-
-  var ni = 0.int32
-  var i = 0.int32
-  while i < s.len:
-    var head: tuple[k, len, dlen: int32]
-    if i + head.typeof.sizeof >= s.len: break
-    copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
-    inc i, head.typeof.sizeof + head.len * int32.sizeof + head.dlen
-    d[ni] = Node()
-    inc ni
-
-  ni = 0.int32
-  i = 0.int32
-  while i < s.len:
-    var head: tuple[k, l, dlen: int32]
-    if i + head.typeof.sizeof >= s.len: break
-    copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
-    inc i, head.typeof.sizeof
-    d[ni].kind = d[head.k]
-    if head.l > 0:
-      d[ni].childs.setLen head.l
-      var i2: seq[int32]
-      i2.setLen head.l
-      copyMem(i2[0].addr, s[i].unsafeaddr, head.l * int32.sizeof)
-      for i, n in i2:
-        d[ni].childs[i] = d[n]
-      inc i, head.l * int32.sizeof
-    if head.dlen > 0:
-      d[ni].data.setLen head.dlen
-      copyMem(d[ni].data[0].addr, s[i].unsafeaddr, head.dlen)
-      inc i, head.dlen
-    inc ni
-
-  return d[0]
-
-proc yase(input: string) =
-  echo input.readFile.deserialize
+proc yase(input: string = "main.yase") =
+  var input = input
+  if not input.fileExists and (input & ".yase").fileExists:
+    input = input & ".yase"
+  echo input.readFile.deserialize(builtinNodes).eval
 
 when isMainModule:
   dispatch yase

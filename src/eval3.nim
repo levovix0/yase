@@ -1,5 +1,6 @@
 import tables
 import ast
+export tables
 
 let
   cNone* = Node "none"
