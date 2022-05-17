@@ -1,6 +1,6 @@
 import os, strutils, strformat
 import cligen, terminal
-import ast, eval3
+import ast, eval
 
 var builtinNodes: seq[Node]
 
