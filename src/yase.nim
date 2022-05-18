@@ -1,4 +1,4 @@
-import os, strutils, strformat
+import os, strutils, strformat, sequtils
 import cligen, terminal
 import ast, eval
 
@@ -8,7 +8,7 @@ let nkSeq = nkNodeKind("seq", tNone)
 
 builtin godPanel, nkNodeKind("god panel", tNone):
   try:
-    if x.len < 1: return nkError(erIllformedAst, x)
+    if x.len < 2: return nkError(erIllformedAst, x)
     let rec = 2
 
     proc head(x: Node, indent: int): string =
@@ -126,7 +126,9 @@ builtin godPanel, nkNodeKind("god panel", tNone):
       of 'k':
         selectedNode.kind = buffer
       of 'i':
+        if buffer == nil: continue
         currentNode.childs.insert buffer, i
+        inc i
       of 'n':
         buffer = nkSeq()
       of 'e':
@@ -141,8 +143,16 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         buffer =
           try: parseFloat stdin.readLine
           except: 0
+      of '[':
+        if i notin 2..currentNode.childs.len: continue
+        swap currentNode[i-1], currentNode[i-2]
+        dec i
+      of ']':
+        if i notin 1..currentNode.childs.high: continue
+        swap currentNode[i-1], currentNode[i]
+        inc i
       of '~':
-        discard
+        buffer = nkSeq(builtinNodes.filterit(it.kind == nkNodeKind))
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
@@ -165,7 +175,10 @@ builtin godPanel, nkNodeKind("god panel", tNone):
  h help
  ~ do something"""
         discard getch()
-      else: discard
+      else:
+        for x in x[1]:
+          if x.kind == nkString and x.len >= 1 and x.asString == $k:
+            discard x[0].eval
 
   except:
     echo getCurrentExceptionMsg()
@@ -195,6 +208,7 @@ builtinNodes = @[
 
   godPanel,
   nkSeq,
+  nil,
 ]
 
 proc yase(input: string = "main.yase") =

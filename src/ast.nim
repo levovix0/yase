@@ -124,7 +124,7 @@ iterator pairs*(x: Node): (int, Node) =
 proc len*(x: Node): int =
   x.childs.len
 
-proc `[]`*(x: Node, i: int): Node =
+proc `[]`*(x: Node, i: int): var Node =
   x.childs[i]
 
 
@@ -227,7 +227,7 @@ proc serialize*(n: Node, builtinNodes: openarray[Node]): string =
   d[n] = 0
   l.add n
 
-  block builtin:
+  block collectGraphToTable:
     var stack = @[(x: n, h: @[n])]
     while stack.len != 0:
       let v = stack[^1]
@@ -258,7 +258,7 @@ proc deserialize*(s: string, builtinNodes: openarray[Node]): Node =
   var i = 0.int32
   while i < s.len:
     var head: tuple[k, len, dlen: int32]
-    if i + head.typeof.sizeof >= s.len: break
+    if i + head.typeof.sizeof > s.len: break
     copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
     inc i, head.typeof.sizeof + head.len * int32.sizeof + head.dlen
     d[ni] = Node()
@@ -268,7 +268,7 @@ proc deserialize*(s: string, builtinNodes: openarray[Node]): Node =
   i = 0.int32
   while i < s.len:
     var head: tuple[k, l, dlen: int32]
-    if i + head.typeof.sizeof >= s.len: break
+    if i + head.typeof.sizeof > s.len: break
     copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
     inc i, head.typeof.sizeof
     d[ni].kind = d[head.k]
