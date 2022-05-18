@@ -1,5 +1,5 @@
-import os, strutils, strformat, sequtils
-import cligen, terminal
+import os, strutils, strformat, sequtils, terminal
+import argparse
 import ast, eval
 
 var builtinNodes: seq[Node]
@@ -211,11 +211,17 @@ builtinNodes = @[
   nil,
 ]
 
-proc yase(input: string = "main.yase") =
-  var input = input
-  if not input.fileExists and (input & ".yase").fileExists:
-    input = input & ".yase"
-  echo input.readFile.deserialize(builtinNodes).eval
+var yase = newParser:
+  arg("input", default=some"main.yase", help="eval file")
+  run:
+    var input = opts.input
+    if not input.fileExists and (input & ".yase").fileExists:
+      input = input & ".yase"
+    echo input.readFile.deserialize(builtinNodes).eval
 
 when isMainModule:
-  dispatch yase
+  try:
+    run yase
+  except UsageError as e:
+    stderr.writeLine getCurrentExceptionMsg()
+    quit(1)
