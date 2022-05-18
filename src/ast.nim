@@ -97,8 +97,8 @@ tString.data = toBytes "store string"
 
 
 var
-  tInt* = "store int64"
-  tFloat* = "store float64"
+  tInt* = Node "store int64"
+  tFloat* = Node "store float64"
 
   nkInt* = nkNodeKind("int", tInt)
   nkFloat* = nkNodeKind("float", tFloat)

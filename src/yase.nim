@@ -12,12 +12,17 @@ builtin godPanel, nkNodeKind("god panel", tNone):
     let rec = 2
 
     proc head(x: Node, indent: int): string =
-      if x == nil: return "nil"
-      if x.kind == nil: return "nil"
+      if x == nil:
+        return " ".repeat(indent) & "nil"
 
-      result = if x.kind.childs.len > 0: x.kind.childs[0].asString else: "undocumented Node"
+      result =
+        if x.kind != nil and x.kind.childs.len > 0:
+          x.kind.childs[0].asString
+        elif x.kind == nil: "nil"
+        elif x.kind.kind == nkString: x.kind.asString
+        else: "undocumented Node"
 
-      if x.kind.childs.len > 1:
+      if x.kind != nil and x.kind.childs.len > 1:
         let t = x.kind.childs[1]
         if t == tInt:
           result = &"{result} {x.asInt}"
@@ -60,20 +65,25 @@ builtin godPanel, nkNodeKind("god panel", tNone):
               result.add x.head2(r + 1)
         s.add x.head2(1)
 
+      let h = terminalHeight()
+      if s.len >= h-3:
+        let start = (ii-(h div 5)).max(0).min(s.high)
+        s = s[start .. (start + h-3).min(s.high)]
+        ii -= start
+
       for i2, s in s:
         if i2 == ii:
           styledEcho(bgWhite, fgBlack, s, resetStyle)
         else:
           styledEcho(fgWhite, bgBlack, s, resetStyle)
 
-      let h = terminalHeight()
       setCursorPos(0, h-3)
       styledEcho(fgWhite, bgBlack, " ".repeat(terminalWidth()), resetStyle)
       styledEcho(fgWhite, bgBlack, buffer.head(0), resetStyle)
 
     let root = x[0]
     var currentNode = root
-    var path: seq[Node]
+    var path: seq[(Node, int)]
     var i: int
     var buffer: Node
 
@@ -85,7 +95,10 @@ builtin godPanel, nkNodeKind("god panel", tNone):
 
       let k = getch()
       case k
-      of 'q': break
+      of 'q':
+        eraseScreen()
+        setCursorPos(0, 0)
+        break
       of 's':
         inc i
         if i > currentNode.len: i = 0
@@ -94,12 +107,12 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         if i < 0: i = currentNode.len
       of 'a':
         if path.len == 0: continue
-        currentNode = path[^1]
+        (currentNode, i) = path[^1]
         path.del path.high
-        i = 0
+        i = i.max(0).min(currentNode.childs.len)
       of 'd':
         if i == 0: continue
-        path.add currentNode
+        path.add (currentNode, i)
         currentNode = currentNode[i-1]
         i = 0
       of 'D':
