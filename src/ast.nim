@@ -3,8 +3,8 @@ import sequtils, strutils, strformat, macros, hashes, tables
 type
   Node* = ref object
     kind*: Node
-    data*: seq[byte]
     childs*: seq[Node]
+    data*: seq[byte]
 
 
 proc hash*(x: Node): Hash = cast[int](x).hash
@@ -221,12 +221,12 @@ proc `$`*(x: Node): string =
 proc serialize*(n: Node, builtinNodes: openarray[Node]): string =
   var d: Table[Node, int32]
   var l: seq[Node]
-  var i = 1.int32
   for i, n in builtinNodes:
     d[n] = -i.int32 - 1
   d[n] = 0
   l.add n
 
+  var i = 1.int32
   block collectGraphToTable:
     var stack = @[(x: n, h: @[n])]
     while stack.len != 0:
@@ -246,26 +246,25 @@ proc serialize*(n: Node, builtinNodes: openarray[Node]): string =
     if n.data.len > 0:
       copyMem(result[a.len * int32.sizeof].addr, n.data[0].unsafeaddr, n.data.len)
 
+  result.add cast[array[16, char]](('y', 'a', 's', 'e', 0.uint32, 0.uint32, i.uint32)).join()
+
   for i, n in l:
     result.add n.toString
 
 proc deserialize*(s: string, builtinNodes: openarray[Node]): Node =
+  if s.len < 16: return
+  let head = cast[ptr tuple[magic: array[4, char], maj, min, n: uint32]](s[0].unsafeaddr)[]
+  if head.magic != ['y', 'a', 's', 'e'] or head.maj != 0 or head.n == 0: return
+
   var d: Table[int32, Node]
   for i, n in builtinNodes:
     d[-i.int32 - 1] = n
 
+  for i in 0.int32..<head.n.int32:
+    d[i] = Node()
+  
   var ni = 0.int32
-  var i = 0.int32
-  while i < s.len:
-    var head: tuple[k, len, dlen: int32]
-    if i + head.typeof.sizeof > s.len: break
-    copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
-    inc i, head.typeof.sizeof + head.len * int32.sizeof + head.dlen
-    d[ni] = Node()
-    inc ni
-
-  ni = 0.int32
-  i = 0.int32
+  var i = 16.int32
   while i < s.len:
     var head: tuple[k, l, dlen: int32]
     if i + head.typeof.sizeof > s.len: break
