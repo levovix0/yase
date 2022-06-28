@@ -218,7 +218,7 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         swap currentNode[i-1], currentNode[i]
         inc i
       of '~':
-        currentNode.childs.insert eLet, i
+        discard
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
@@ -260,47 +260,47 @@ builtin godPanel, nkNodeKind("god panel", tNone):
     echo getStackTrace()
 
 builtinNodes = @[
-  nkNodeKind,
-  tNone,
-  tString,
-  nkString,
   tInt,
   tFloat,
+  tNone,
+  tString,
+
+  nkNodeKind,
+  nkString,
   nkInt,
   nkFloat,
   nkError,
+  nkSeq,
 
   cNone,
   cTrue,
   cFalse,
+
+  egStack,
+  eLet,
+  eIfStmt,
   eIf,
   eElse,
-  erIllformedAst,
   eSeq,
-  eIfStmt,
   eWhile,
   eConcat,
-
-  godPanel,
-  nkSeq,
-
-  stdInsert,
-  stdDelete,
   
+  erIllformedAst,
   erIndex,
   erType,
 
-  egStack,
-
-  stdEval,
-  stdPass,
-  stdGet,
-  stdLen,
   stdSumInt,
-  stdTreeEquals,
   stdDataEquals,
 
-  eLet,
+  stdPass,
+  stdEval,
+  stdGet,
+  stdLen,
+  stdInsert,
+  stdDelete,
+  stdTreeEquals,
+
+  godPanel,
 ]
 
 var yase = newParser:
