@@ -1,10 +1,30 @@
-import os, strutils, strformat, sequtils, terminal
+import os, strutils, strformat, sequtils, terminal, unicode
 import argparse
 import ast, eval
 
 var builtinNodes: seq[Node]
 
-let nkSeq = nkNodeKind("seq", tNone)
+let
+  erIndex* = Node "index error"
+  erType* = Node "type error"
+  nkSeq = nkNodeKind("seq", tNone)
+
+builtin stdInsert, nkNodeKind("insert node", tNone):
+  if x.len < 3: return nkError(erIllformedAst, x)
+  result = cNone
+  let ni = x[1].eval
+  if ni.kind != nkInt: return nkError(erType, x, ni)
+  let i = ni.asInt
+  x[0].eval.childs.insert x[2].eval, i
+
+builtin stdDelete, nkNodeKind("delete node", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  result = cNone
+  let ni = x[1].eval
+  if ni.kind != nkInt: return nkError(erType, x, ni)
+  let i = ni.asInt
+  if x[0].len <= i: return nkError(erIndex, x)
+  x[0].childs.delete i
 
 builtin godPanel, nkNodeKind("god panel", tNone):
   try:
@@ -40,13 +60,14 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         result = result & ":"
 
       let id = cast[int](x).toHex
-      let r = result
       let w = terminalWidth()
-      result = " ".repeat(w)
-      result[indent.min(w-1)..(indent + r.high).min(w-1)] = r[0..((indent + r.high).min(w-1) - indent.min(w-1))]
+      var r = " ".repeat(indent).toRunes & result.toRunes & " ".repeat(w - result.runeLen - indent).toRunes
+      result.add " ".repeat(w - result.runeLen - indent)
+      result.insert " ".repeat(indent)
       if w > id.len + 2:
-        result[^(id.len)..^1] = id
-        result[^(id.len + 1)] = ' '
+        r[^(id.len)..^1] = id.toRunes
+        r[^(id.len + 1)] = " ".runeAt(0)
+      result = $r
 
 
     proc drawUi(x: Node, buffer: Node, i: int) =
@@ -75,11 +96,11 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         if i2 == ii:
           styledEcho(bgWhite, fgBlack, s, resetStyle)
         else:
-          styledEcho(fgWhite, bgBlack, s, resetStyle)
+          echo s
 
       setCursorPos(0, h-3)
-      styledEcho(fgWhite, bgBlack, " ".repeat(terminalWidth()), resetStyle)
-      styledEcho(fgWhite, bgBlack, buffer.head(0), resetStyle)
+      echo()
+      echo buffer.head(0)
 
     let root = x[0]
     var currentNode = root
@@ -152,7 +173,10 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         swap currentNode[i-1], currentNode[i]
         inc i
       of '~':
-        buffer = nkSeq(builtinNodes.filterit(it.kind == nkNodeKind))
+        currentNode.childs.add stdInsert
+        currentNode.childs.add stdDelete
+        currentNode.childs.add erIndex
+        currentNode.childs.add erType
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
@@ -173,7 +197,14 @@ builtin godPanel, nkNodeKind("god panel", tNone):
  I read int to buffer
  F read float to buffer
  h help
- ~ do something"""
+ ~ do something
+ """
+        for x in x[1]:
+          if x.kind == nkString and x.len >= 2 and x[1].kind == nkString:
+            echo " ", x.asString, " ", x[1].asString
+          elif x.kind == nkString and x.len >= 1:
+            echo x.asString
+
         discard getch()
       else:
         for x in x[1]:
@@ -208,7 +239,10 @@ builtinNodes = @[
 
   godPanel,
   nkSeq,
-  nil,
+  stdInsert,
+  stdDelete,
+  erIndex,
+  erType,
 ]
 
 var yase = newParser:
@@ -222,6 +256,6 @@ var yase = newParser:
 when isMainModule:
   try:
     run yase
-  except UsageError as e:
+  except UsageError:
     stderr.writeLine getCurrentExceptionMsg()
     quit(1)
