@@ -6,8 +6,8 @@ var builtinNodes: seq[Node]
 
 let
   erIndex* = Node "index error"
-  erType* = Node "type error"
-  nkSeq = nkNodeKind("seq", tNone)
+  
+  nkSeq* = nkNodeKind("seq", tNone)
 
 builtin stdInsert, nkNodeKind("insert node", tNone):
   if x.len < 3: return nkError(erIllformedAst, x)
@@ -23,10 +23,55 @@ builtin stdDelete, nkNodeKind("delete node", tNone):
   let ni = x[1].eval
   if ni.kind != nkInt: return nkError(erType, x, ni)
   let i = ni.asInt
-  if x[0].len <= i: return nkError(erIndex, x)
-  x[0].childs.delete i
+  let nx = x[0].eval
+  if i notin 0..<nx.len: return nkError(erIndex, x)
+  nx.childs.delete i
+
+builtin stdPass, nkNodeKind("pass", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  x[0]
+
+builtin stdEval, nkNodeKind("eval", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  x[0].eval.eval
+
+builtin stdGet, nkNodeKind("get child", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  let nx = x[0].eval
+  if x.len == 1: return nx[0]
+  
+  let ni = x[1].eval
+  if ni.kind != nkInt: return nkError(erType, x, ni)
+  let i = ni.asInt
+  if i notin 0..<nx.len: return nkError(erIndex, x, nx, ni)
+  nx[i]
+
+builtin stdLen, nkNodeKind("len", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  x[0].eval.len
+
+builtin stdSumInt, nkNodeKind("sum[int]", tNone):
+  var r = 0
+  for y in x:
+    let ni = y.eval
+    if ni.kind != nkInt: return nkError(erType, x, y, ni)
+    r += ni.asInt
+  r
+
+builtin stdTreeEquals, nkNodeKind("tree ==", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  if x[0].eval ==@ x[1].eval: cTrue else: cFalse
+
+builtin stdDataEquals, nkNodeKind("data ==", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    nb = x[1].eval
+  if na.kind != nb.kind: return nkError(erType, x, na, nb)
+  if na.data == nb.data: cTrue else: cFalse
 
 builtin godPanel, nkNodeKind("god panel", tNone):
+  result = cNone
   try:
     if x.len < 2: return nkError(erIllformedAst, x)
     let rec = 2
@@ -173,10 +218,7 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         swap currentNode[i-1], currentNode[i]
         inc i
       of '~':
-        currentNode.childs.add stdInsert
-        currentNode.childs.add stdDelete
-        currentNode.childs.add erIndex
-        currentNode.childs.add erType
+        currentNode.childs.insert eLet, i
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
@@ -188,14 +230,16 @@ builtin godPanel, nkNodeKind("god panel", tNone):
  d move to child
  D delete child
  S save
- b set buffer to current node
+ b set buffer to selected node
  k set kind to buffer node
  i insert child from buffer
  n create new node on buffer
- e eval current node to buffer
+ e eval selected node to buffer
  " read string to buffer
  I read int to buffer
  F read float to buffer
+ [ move node up
+ ] move node down
  h help
  ~ do something
  """
@@ -239,10 +283,24 @@ builtinNodes = @[
 
   godPanel,
   nkSeq,
+
   stdInsert,
   stdDelete,
+  
   erIndex,
   erType,
+
+  egStack,
+
+  stdEval,
+  stdPass,
+  stdGet,
+  stdLen,
+  stdSumInt,
+  stdTreeEquals,
+  stdDataEquals,
+
+  eLet,
 ]
 
 var yase = newParser:

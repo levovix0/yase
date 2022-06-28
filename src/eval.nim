@@ -11,6 +11,9 @@ let
   eElse* = nkNodeKind("else", tNone)
 
   erIllformedAst* = Node "illformed ast"
+  erType* = Node "type error"
+
+  egStack* = Node "global eval stack"
 
 
 converter toNode*(x: bool): Node =
@@ -18,10 +21,17 @@ converter toNode*(x: bool): Node =
 
 
 var builtins*: Table[Node, proc(x: Node): Node]
+var lets*: Table[int, Table[Node, Node]]
 
 proc eval*(x: Node): Node =
-  try: builtins[x.kind](x)
-  except: x
+  try:
+    return builtins[x.kind](x)
+  except:
+    if x.kind.kind != nkNodeKind or x.kind.len < 3 or x.kind[2] == cNone: return x
+    egStack.childs.add x  # push
+    result = x.kind[2].eval
+    lets.del egStack.len  # cleanup lets
+    egStack.childs.setLen max(egStack.childs.high, 0)  # pop
 
 template builtin*(name, node, body) {.dirty.} =
   let name* = node
@@ -35,16 +45,18 @@ builtin eSeq, nkNodeKind("eval sequence, return last", tNone):
 
 builtin eIfStmt, nkNodeKind("if statement", tNone):
   result = cNone
-  for x in x:
-    if x.kind == eIf:
-      if x.len != 2:
-        return nkError(erIllformedAst, x)
-      if x[0].eval == cTrue:
-        return x[1].eval
-    elif x.kind == eElse:
-      if x.len != 1:
-        return nkError(erIllformedAst, x)
-      return x[0].eval
+  for y in x:
+    if y.kind == eIf:
+      if y.len != 2:
+        return nkError(erIllformedAst, x, y)
+      let ny = y[0].eval
+      if ny == cTrue:
+        return y[1].eval
+      elif ny != cFalse: return nkError(erType, x, y, ny)
+    elif y.kind == eElse:
+      if y.len != 1:
+        return nkError(erIllformedAst, x, y)
+      return y[0].eval
 
 builtin eWhile, nkNodeKind("while", tNone):
   if x.len != 2:
@@ -57,3 +69,14 @@ builtin eConcat, nkNodeKind("concat", tNone):
   if x.len < 1:
     return nkError(erIllformedAst, x)
   return x[0] & x.childs[1..^1]
+
+builtin eLet, nkNodeKind("let", tNone):
+  if x.len != 1: return nkError(erIllformedAst, x)
+  try:
+    lets[egStack.len][x[0]]
+  except KeyError:
+    try:
+      lets[egStack.len][x[0]] = x[0].eval
+    except KeyError:
+      lets[egStack.len] = {x[0]: x[0].eval}.toTable
+    lets[egStack.len][x[0]]
