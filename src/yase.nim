@@ -9,7 +9,7 @@ let
   
   nkSeq* = nkNodeKind("seq", tNone)
 
-builtin stdInsert, nkNodeKind("insert node", tNone):
+builtin stdInsert, nkNodeKind("insert child", tNone):
   if x.len < 3: return nkError(erIllformedAst, x)
   result = cNone
   let ni = x[1].eval
@@ -17,7 +17,7 @@ builtin stdInsert, nkNodeKind("insert node", tNone):
   let i = ni.asInt
   x[0].eval.childs.insert x[2].eval, i
 
-builtin stdDelete, nkNodeKind("delete node", tNone):
+builtin stdDelete, nkNodeKind("delete child", tNone):
   if x.len < 2: return nkError(erIllformedAst, x)
   result = cNone
   let ni = x[1].eval
@@ -38,7 +38,9 @@ builtin stdEval, nkNodeKind("eval", tNone):
 builtin stdGet, nkNodeKind("get child", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
   let nx = x[0].eval
-  if x.len == 1: return nx[0]
+  if x.len == 1:
+    if 0 notin 0..<nx.len: return nkError(erIndex, x, nx, 0)
+    return nx[0]
   
   let ni = x[1].eval
   if ni.kind != nkInt: return nkError(erType, x, ni)
@@ -70,10 +72,94 @@ builtin stdDataEquals, nkNodeKind("data ==", tNone):
   if na.kind != nb.kind: return nkError(erType, x, na, nb)
   if na.data == nb.data: cTrue else: cFalse
 
+builtin stdSetData, nkNodeKind("set data", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    nb = x[1].eval
+  if na.kind != nb.kind: return nkError(erType, x, na, nb)
+  na.data = nb.data
+
+builtin stdCopyNode, nkNodeKind("copy node", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  let n = x[0].eval
+  result = Node(kind: n.kind, childs: n.childs, data: n.data)
+
+builtin stdLessInt, nkNodeKind("<[int]", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    nb = x[1].eval
+  if na.kind != nkInt or nb.kind != nkInt: return nkError(erType, x, na, nb)
+  if na.asInt < nb.asInt: cTrue else: cFalse
+
+builtin stdSetKind, nkNodeKind("set kind", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    nb = x[1].eval
+  na.kind = nb
+
+builtin stdIdentity, nkNodeKind("is identical", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    nb = x[1].eval
+  na == nb
+
+
+builtin stdAskSelect, nkNodeKind("ask select", tNone):
+  if x.len < 2: return nkError(erIllformedAst, x)
+  let
+    na = x[0].eval
+    f = x[1].eval
+  if f.kind != nkNodeKind: return nkError(erType, x, f)
+  if na.len == 0: return nkError(erIndex, x, na, 0)
+  for x in na: echo f(stdPass(x)).eval
+  let s = na.childs.mapit(f(stdPass(it)).eval.asString)
+
+  proc drawUi(s: seq[string], i: int) =
+    eraseScreen()
+    setCursorPos(0, 0)
+    let h = terminalHeight()
+    var s = s
+    var i = i
+    if s.len >= h-3:
+      let start = (i-(h div 5)).max(0).min(s.high)
+      s = s[start .. (start + h-3).min(s.high)]
+      i -= start
+
+    for i2, s in s:
+      if i2 == i:
+        styledEcho(bgWhite, fgBlack, s, resetStyle)
+      else:
+        echo s
+  
+  var i = 0
+  while true:
+    drawUi(s, i)
+    case getch()
+    of 's':
+      inc i
+      if i > s.high: i = 0
+    of 'w':
+      dec i
+      if i < 0: i = s.high
+    of 13.char:
+      return i
+    of 27.char:
+      return -1
+    else: discard
+
+
 builtin godPanel, nkNodeKind("god panel", tNone):
   result = cNone
   try:
-    if x.len < 2: return nkError(erIllformedAst, x)
+    if x.len < 3 or x[2].len < 4: return nkError(erIllformedAst, x)
+    if x[2][0].kind != nkString or x[2][0].asString != "current node": return nkError(erIllformedAst, x)
+    if x[2][1].kind != nkInt: return nkError(erIllformedAst, x)
+    if x[2][2].kind != nkString or x[2][2].asString != "path": return nkError(erIllformedAst, x)
+    if x[2][3].kind != nkString or x[2][3].asString != "buffer": return nkError(erIllformedAst, x)
     let rec = 2
 
     proc head(x: Node, indent: int): string =
@@ -148,16 +234,30 @@ builtin godPanel, nkNodeKind("god panel", tNone):
       echo buffer.head(0)
 
     let root = x[0]
-    var currentNode = root
-    var path: seq[(Node, int)]
-    var i: int
-    var buffer: Node
+    
+    let nCurrentNode = x[2][0]
+    template currentNode: Node =
+      if nCurrentNode.len < 1: nil.Node else: nCurrentNode[0]
+    template setCurrentNode(v: Node) =
+      if nCurrentNode.len < 1: nCurrentNode.childs.add v
+      else: nCurrentNode.childs[0] = v
+
+    let i = x[2][1]
+
+    let path = x[2][2]
+
+    let nBuffer = x[2][3]
+    template buffer: Node =
+      if nBuffer.len < 1: nil.Node else: nBuffer[0]
+    template setBuffer(v: Node) =
+      if nBuffer.len < 1: nBuffer.childs.add v
+      else: nBuffer.childs[0] = v
 
     template selectedNode: Node =
-      if i == 0: currentNode else: currentNode[i-1]
+      if i == 0: currentNode else: currentNode()[i.asInt-1]
 
     while true:
-      drawUi(currentNode, buffer, i)
+      drawUi(currentNode, buffer, i.asInt)
 
       let k = getch()
       case k
@@ -166,59 +266,61 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         setCursorPos(0, 0)
         break
       of 's':
-        inc i
-        if i > currentNode.len: i = 0
+        i.data = toBytes (i.asInt + 1)
+        if i.asInt > currentNode.len: i.data = toBytes 0
       of 'w':
-        dec i
-        if i < 0: i = currentNode.len
+        i.data = toBytes (i.asInt - 1)
+        if i.asInt < 0: i.data = toBytes currentNode.len
       of 'a':
+        while path.len > 0 and path.childs[^1].len < 1:
+          path.childs.del path.childs.high
         if path.len == 0: continue
-        (currentNode, i) = path[^1]
-        path.del path.high
-        i = i.max(0).min(currentNode.childs.len)
+        let (ni, nc) = (path.childs[^1], path.childs[^1][0])
+        setCurrentNode nc
+        if ni.kind == nkInt:
+          i.data = ni.data
+        else:
+          i.data = toBytes 0
+        path.childs.del path.childs.high
+        i.data = toBytes i.asInt.max(0).min(currentNode.childs.len)
       of 'd':
-        if i == 0: continue
-        path.add (currentNode, i)
-        currentNode = currentNode[i-1]
-        i = 0
+        if i.asInt == 0: continue
+        path.childs.add i.asInt
+        path.childs[^1].childs.add currentNode
+        setCurrentNode currentNode[i.asInt-1]
+        i.data = toBytes 0
       of 'D':
         if i == 0: continue
-        currentNode.childs.delete i-1
-        if i > currentNode.len: i = currentNode.len
+        currentNode.childs.delete i.asInt-1
+        if i.asInt > currentNode.len: i.data = toBytes currentNode.len
       of 'S':
         writeFile "main.yase", root.serialize(builtinNodes)
       of 'b':
-        buffer = selectedNode
+        setBuffer selectedNode
       of 'k':
         selectedNode.kind = buffer
       of 'i':
         if buffer == nil: continue
-        currentNode.childs.insert buffer, i
-        inc i
-      of 'n':
-        buffer = nkSeq()
+        currentNode.childs.insert buffer, i.asInt
+        i.data = toBytes (i.asInt + 1)
       of 'e':
-        buffer = eval selectedNode
+        setBuffer eval selectedNode
       of '"':
-        buffer = stdin.readLine
+        setBuffer stdin.readLine
       of 'I':
-        buffer =
+        setBuffer:
           try: parseInt stdin.readLine
           except: 0
       of 'F':
-        buffer =
+        setBuffer:
           try: parseFloat stdin.readLine
           except: 0
-      of '[':
-        if i notin 2..currentNode.childs.len: continue
-        swap currentNode[i-1], currentNode[i-2]
-        dec i
       of ']':
-        if i notin 1..currentNode.childs.high: continue
-        swap currentNode[i-1], currentNode[i]
-        inc i
+        if i.asInt notin 1..currentNode.childs.high: continue
+        swap currentNode[i.asInt-1], currentNode[i.asInt]
+        i.data = toBytes (i.asInt + 1)
       of '~':
-        discard
+        currentNode.childs.insert stdIdentity, i.asInt
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
@@ -233,12 +335,10 @@ builtin godPanel, nkNodeKind("god panel", tNone):
  b set buffer to selected node
  k set kind to buffer node
  i insert child from buffer
- n create new node on buffer
  e eval selected node to buffer
  " read string to buffer
  I read int to buffer
  F read float to buffer
- [ move node up
  ] move node down
  h help
  ~ do something
@@ -283,8 +383,9 @@ builtinNodes = @[
   eElse,
   eSeq,
   eWhile,
-  eConcat,
   
+  stdSetData,
+
   erIllformedAst,
   erIndex,
   erType,
@@ -301,6 +402,12 @@ builtinNodes = @[
   stdTreeEquals,
 
   godPanel,
+
+  stdCopyNode,
+  stdLessInt,
+  stdAskSelect,
+  stdSetKind,
+  stdIdentity,
 ]
 
 var yase = newParser:

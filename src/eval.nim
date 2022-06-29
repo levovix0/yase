@@ -24,9 +24,9 @@ var builtins*: Table[Node, proc(x: Node): Node]
 var lets*: Table[int, Table[Node, Node]]
 
 proc eval*(x: Node): Node =
-  try:
+  if x.kind in builtins:
     return builtins[x.kind](x)
-  except:
+  else:
     if x.kind.kind != nkNodeKind or x.kind.len < 3 or x.kind[2] == cNone: return x
     egStack.childs.add x  # push
     result = x.kind[2].eval
@@ -65,18 +65,13 @@ builtin eWhile, nkNodeKind("while", tNone):
   while x[0].eval == cTrue:
     result = x[1].eval
 
-builtin eConcat, nkNodeKind("concat", tNone):
-  if x.len < 1:
-    return nkError(erIllformedAst, x)
-  return x[0] & x.childs[1..^1]
-
 builtin eLet, nkNodeKind("let", tNone):
   if x.len != 1: return nkError(erIllformedAst, x)
-  try:
-    lets[egStack.len][x[0]]
-  except KeyError:
-    try:
-      lets[egStack.len][x[0]] = x[0].eval
-    except KeyError:
-      lets[egStack.len] = {x[0]: x[0].eval}.toTable
-    lets[egStack.len][x[0]]
+  
+  if egStack.len notin lets:
+    lets[egStack.len] = {x[0]: x[0].eval}.toTable
+  
+  if x[0] notin lets[egStack.len]:
+    lets[egStack.len][x[0]] = x[0].eval
+  
+  lets[egStack.len][x[0]]
