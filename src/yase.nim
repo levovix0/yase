@@ -6,8 +6,6 @@ var builtinNodes: seq[Node]
 
 let
   erIndex* = Node "index error"
-  
-  nkSeq* = nkNodeKind("seq", tNone)
 
 builtin stdInsert, nkNodeKind("insert child", tNone):
   if x.len < 3: return nkError(erIllformedAst, x)
@@ -51,6 +49,10 @@ builtin stdGet, nkNodeKind("get child", tNone):
 builtin stdLen, nkNodeKind("len", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
   x[0].eval.len
+
+builtin stdKind, nkNodeKind("kind", tNone):
+  if x.len < 1: return nkError(erIllformedAst, x)
+  x[0].eval.kind
 
 builtin stdSumInt, nkNodeKind("sum[int]", tNone):
   var r = 0
@@ -315,17 +317,16 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         setBuffer:
           try: parseFloat stdin.readLine
           except: 0
-      of ']':
-        if i.asInt notin 1..currentNode.childs.high: continue
-        swap currentNode[i.asInt-1], currentNode[i.asInt]
-        i.data = toBytes (i.asInt + 1)
       of '~':
-        currentNode.childs.insert stdIdentity, i.asInt
+        currentNode.childs.insert stdKind, i.asInt
       of 'h':
         eraseScreen()
         setCursorPos(0, 0)
         echo """
+ h help
  q quit
+ ~ do magic
+
  s move down
  w move up
  a move to parent
@@ -339,9 +340,6 @@ builtin godPanel, nkNodeKind("god panel", tNone):
  " read string to buffer
  I read int to buffer
  F read float to buffer
- ] move node down
- h help
- ~ do something
  """
         for x in x[1]:
           if x.kind == nkString and x.len >= 2 and x[1].kind == nkString:
@@ -354,6 +352,7 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         for x in x[1]:
           if x.kind == nkString and x.len >= 1 and x.asString == $k:
             discard x[0].eval
+            break
 
   except:
     echo getCurrentExceptionMsg()
@@ -408,6 +407,10 @@ builtinNodes = @[
   stdAskSelect,
   stdSetKind,
   stdIdentity,
+
+  eLetLookup,
+  
+  stdKind,
 ]
 
 var yase = newParser:

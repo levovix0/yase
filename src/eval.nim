@@ -1,4 +1,4 @@
-import tables
+import tables, sequtils
 import ast
 export tables
 
@@ -6,6 +6,8 @@ let
   cNone* = Node "none"
   cTrue* = Node "true"
   cFalse* = Node "false"
+  
+  nkSeq* = nkNodeKind("seq", tNone)
 
   eIf* = nkNodeKind("if", tNone)
   eElse* = nkNodeKind("else", tNone)
@@ -27,11 +29,15 @@ proc eval*(x: Node): Node =
   if x.kind in builtins:
     return builtins[x.kind](x)
   else:
+    #! note: deprecated usage
     if x.kind.kind != nkNodeKind or x.kind.len < 3 or x.kind[2] == cNone: return x
-    egStack.childs.add x  # push
-    result = x.kind[2].eval
-    lets.del egStack.len  # cleanup lets
-    egStack.childs.setLen max(egStack.childs.high, 0)  # pop
+
+    egStack.childs.add nkSeq(x.childs.map(eval))  # push args
+    defer:
+      lets.del egStack.len  # cleanup lets
+      egStack.childs.setLen max(egStack.childs.high, 0)  # pop
+    
+    x.kind[2].eval
 
 template builtin*(name, node, body) {.dirty.} =
   let name* = node
@@ -75,3 +81,15 @@ builtin eLet, nkNodeKind("let", tNone):
     lets[egStack.len][x[0]] = x[0].eval
   
   lets[egStack.len][x[0]]
+
+builtin eLetLookup, nkNodeKind("let lookup", tNone):
+  if x.len != 1: return nkError(erIllformedAst, x)
+  
+  var i = egStack.len - 1
+  while i > 0:
+    if i in lets:
+      if x[0] in lets[i]:
+        return lets[i][x[0]]
+    dec i
+  
+  cNone
