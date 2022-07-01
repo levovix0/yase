@@ -1,13 +1,246 @@
-import os, strutils, strformat, sequtils, terminal, unicode
+import os, strutils, strformat, sequtils, terminal, unicode, tables, macros, hashes
 import argparse
-import ast, eval
 
-var builtinNodes: seq[Node]
+{.experimental: "callOperator".}
+
+type
+  Node = ref object
+    kind: Node
+    childs: seq[Node]
+    data: seq[byte]
+
+
+proc hash(x: Node): Hash = cast[int](x).hash
+
+
+proc asInt(x: Node): int =
+  if x.data.len == int64.sizeof:
+    cast[ptr int64](x.data[0].addr)[].int
+  else: 0
+
+proc asString(x: Node): string =
+  cast[string](x.data)
+
+
+proc `{}`(kind: Node, data: string): Node =
+  Node(kind: kind, data: cast[seq[byte]](data))
+
+proc `{}`[T](kind: Node, data: T): Node =
+  Node(kind: kind, data: cast[ptr array[T.sizeof, byte]](data.unsafeaddr)[].`@`)
+
+proc `()`(kind: Node, childs: varargs[Node]): Node =
+  Node(kind: kind, childs: childs.toSeq)
+
+
+proc toBytes(x: string): seq[byte] = cast[seq[byte]](x)
+
+
+var
+  nkNodeKind = Node()
+
+  tNone = Node()
+  tString = Node()
+  
+  nkString = nkNodeKind()
+
+
+converter toNode(s: string): Node = nkString{s}
+
+nkNodeKind.childs = @[Node "node kind", tNone]
+nkNodeKind.kind = nkNodeKind
+
+nkString.childs = @[Node "string", tString]
+
+tNone.kind = nkString
+tNone.data = toBytes "store nothing"
+
+tString.kind = nkString
+tString.data = toBytes "store string"
+
+
+var
+  tInt = Node "store int64"
+
+  nkInt = nkNodeKind("int", tInt)
+
+  nkError = nkNodeKind("error", tNone)
+
+
+converter toNode(i: int): Node = nkInt{i.int64}
+
+
+iterator items(x: Node): Node =
+  for x in x.childs: yield x
+
+proc len(x: Node): int = x.childs.len
+proc `[]`(x: Node, i: int): var Node = x.childs[i]
+
+
+proc serialize(n: Node, builtinNodes: openarray[Node]): string =
+  var d: Table[Node, int32]
+  var l: seq[Node]
+  for i, n in builtinNodes:
+    d[n] = -i.int32 - 1
+  d[n] = 0
+  l.add n
+
+  var i = 1.int32
+  block collectGraphToTable:
+    var stack = @[(x: n, h: @[n])]
+    while stack.len != 0:
+      let v = stack[^1]
+      let n = v.x.childs.filterit(it notin v.h and it notin builtinNodes)
+      for x in n:
+        if x notin d:
+          d[x] = i
+          inc i
+          l.add x
+      stack[^1..^1] = n.mapit((it, v.h & it))
+
+  proc toString(n: Node): string =
+    let a = @[d[n.kind], n.childs.len.int32, n.data.len.int32] & n.childs.mapit(d[it])
+    result.setLen a.len * int32.sizeof + n.data.len
+    copyMem(result[0].addr, a[0].unsafeaddr, a.len * int32.sizeof)
+    if n.data.len > 0:
+      copyMem(result[a.len * int32.sizeof].addr, n.data[0].unsafeaddr, n.data.len)
+
+  result.add cast[array[16, char]](('y', 'a', 's', 'e', 0.uint32, 0.uint32, i.uint32)).join()
+
+  for i, n in l:
+    result.add n.toString
+
+proc deserialize(s: string, builtinNodes: openarray[Node]): Node =
+  if s.len < 16: return
+  let head = cast[ptr tuple[magic: array[4, char], maj, min, n: uint32]](s[0].unsafeaddr)[]
+  if head.magic != ['y', 'a', 's', 'e'] or head.maj != 0 or head.n == 0: return
+
+  var d: Table[int32, Node]
+  for i, n in builtinNodes:
+    d[-i.int32 - 1] = n
+
+  for i in 0.int32..<head.n.int32:
+    d[i] = Node()
+  
+  var ni = 0.int32
+  var i = 16.int32
+  while i < s.len:
+    var head: tuple[k, l, dlen: int32]
+    if i + head.typeof.sizeof > s.len: break
+    copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
+    inc i, head.typeof.sizeof
+    d[ni].kind = d[head.k]
+    if head.l > 0:
+      d[ni].childs.setLen head.l
+      var i2: seq[int32]
+      i2.setLen head.l
+      copyMem(i2[0].addr, s[i].unsafeaddr, head.l * int32.sizeof)
+      for i, n in i2:
+        d[ni].childs[i] = d[n]
+      inc i, head.l * int32.sizeof
+    if head.dlen > 0:
+      d[ni].data.setLen head.dlen
+      copyMem(d[ni].data[0].addr, s[i].unsafeaddr, head.dlen)
+      inc i, head.dlen
+    inc ni
+
+  return d[0]
+
 
 let
-  erIndex* = Node "index error"
-  erParse* = Node "parse error"
-  erOs* = Node "os error"
+  cNone = Node "none"
+  cTrue = Node "true"
+  cFalse = Node "false"
+  
+  nkSeq = nkNodeKind("seq", tNone)
+
+  eIf = nkNodeKind("if", tNone)
+  eElse = nkNodeKind("else", tNone)
+
+  erIllformedAst = Node "illformed ast"
+  erType = Node "type error"
+  erIndex = Node "index error"
+  erParse = Node "parse error"
+  erOs = Node "os error"
+
+  egStack = Node "global eval stack"
+
+
+var builtinNodes: seq[Node]
+var builtins: Table[Node, proc(x: Node): Node]
+var lets: Table[int, Table[Node, Node]]
+
+
+converter toNode(x: bool): Node =
+  if x: cTrue else: cFalse
+
+
+proc eval(x: Node): Node =
+  if x.kind in builtins:
+    return builtins[x.kind](x)
+  else:
+    if x.kind.kind != nkNodeKind or x.kind.len < 3 or x.kind[2] == cNone: return x
+
+    egStack.childs.add nkSeq(x.childs.map(eval))  # push args
+    defer:
+      lets.del egStack.len  # cleanup lets
+      egStack.childs.setLen max(egStack.childs.high, 0)  # pop
+    
+    x.kind[2].eval
+
+template builtin(name, node, body) {.dirty.} =
+  let name = node
+  builtins[name] = proc(x: Node): Node = body
+
+
+builtin eSeq, nkNodeKind("eval sequence, return last", tNone):
+  result = cNone
+  for x in x.childs:
+    result = x.eval
+
+builtin eIfStmt, nkNodeKind("if statement", tNone):
+  result = cNone
+  for y in x:
+    if y.kind == eIf:
+      if y.len != 2:
+        return nkError(erIllformedAst, x, y)
+      let ny = y[0].eval
+      if ny == cTrue:
+        return y[1].eval
+      elif ny != cFalse: return nkError(erType, x, y, ny)
+    elif y.kind == eElse:
+      if y.len != 1:
+        return nkError(erIllformedAst, x, y)
+      return y[0].eval
+
+builtin eWhile, nkNodeKind("while", tNone):
+  if x.len != 2:
+    return nkError(erIllformedAst, x)
+  result = cNone
+  while x[0].eval == cTrue:
+    result = x[1].eval
+
+builtin eLet, nkNodeKind("let", tNone):
+  if x.len != 1: return nkError(erIllformedAst, x)
+  
+  if egStack.len notin lets:
+    lets[egStack.len] = {x[0]: x[0].eval}.toTable
+  
+  if x[0] notin lets[egStack.len]:
+    lets[egStack.len][x[0]] = x[0].eval
+  
+  lets[egStack.len][x[0]]
+
+builtin eLetLookup, nkNodeKind("let lookup", tNone):
+  if x.len != 1: return nkError(erIllformedAst, x)
+  
+  var i = egStack.len - 1
+  while i > 0:
+    if i in lets:
+      if x[0] in lets[i]:
+        return lets[i][x[0]]
+    dec i
+  
+  cNone
 
 builtin stdInsert, nkNodeKind("insert child", tNone):
   if x.len < 3: return nkError(erIllformedAst, x)
@@ -212,7 +445,7 @@ builtin stdAskSelect, nkNodeKind("ask select", tNone):
     f = x[1].eval
   if f.kind != nkNodeKind: return nkError(erType, x, f)
   if na.len == 0: return nkError(erIndex, x, na, 0)
-  for x in na: echo f(stdPass(x)).eval
+  for x in na: echo f(stdPass(x)).eval.asString
   let s = na.childs.mapit(f(stdPass(it)).eval.asString)
 
   proc drawUi(s: seq[string], i: int) =
@@ -435,12 +668,13 @@ builtinNodes = @[
 ]
 
 var yase = newParser:
+  help("Yet another self-editor")
   arg("input", default=some"main.yase", help="eval file")
   run:
     var input = opts.input
     if not input.fileExists and (input & ".yase").fileExists:
       input = input & ".yase"
-    echo input.readFile.deserialize(builtinNodes).eval
+    discard input.readFile.deserialize(builtinNodes).eval
 
 when isMainModule:
   try:
