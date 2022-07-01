@@ -29,7 +29,6 @@ proc eval*(x: Node): Node =
   if x.kind in builtins:
     return builtins[x.kind](x)
   else:
-    #! note: deprecated usage
     if x.kind.kind != nkNodeKind or x.kind.len < 3 or x.kind[2] == cNone: return x
 
     egStack.childs.add nkSeq(x.childs.map(eval))  # push args

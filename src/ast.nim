@@ -18,50 +18,29 @@ proc asInt*(x: Node): int =
 proc asString*(x: Node): string =
   cast[string](x.data)
 
-proc asFloat*(x: Node): float =
-  if x.data.len == float64.sizeof:
-    cast[ptr float64](x.data[0].addr)[].float
-  else: 0
-
 
 proc `{}`*(kind: Node, data: seq[byte]): Node =
-  ## node constructor
-  ## kind{data}
   Node(kind: kind, data: data)
 
 proc `{}`*(kind: Node, data: openarray[byte]): Node =
-  ## node constructor
-  ## kind{data}
   Node(kind: kind, data: data.toSeq)
 
 proc `{}`*[I](kind: Node, data: array[I, byte]): Node =
-  ## node constructor
-  ## kind{data}
   Node(kind: kind, data: @data)
 
 proc `{}`*(kind: Node, data: string): Node =
-  ## node constructor
-  ## kind{data}
   Node(kind: kind, data: cast[seq[byte]](data))
 
 proc `{}`*[T](kind: Node, data: T): Node =
-  ## node constructor
-  ## kind{data}
   Node(kind: kind, data: cast[ptr array[T.sizeof, byte]](data.unsafeaddr)[].`@`)
 
 proc `()`*(kind: Node, childs: varargs[Node]): Node =
-  ## node constructor
-  ## kind(childs...)
   Node(kind: kind, childs: childs.toSeq)
 
 proc `()`*(kind: Node, childs: varargs[Node], data: openarray[byte]): Node =
-  ## node constructor
-  ## kind(childs..., data=data)
   Node(kind: kind, data: data.toSeq, childs: childs.toSeq)
 
 proc `()`*(kind: Node, childs: varargs[Node], data: seq[byte]): Node =
-  ## node constructor
-  ## kind(childs..., data=data)
   Node(kind: kind, data: data, childs: childs.toSeq)
 
 
@@ -71,10 +50,6 @@ proc toBytes*(x: string): seq[byte] = cast[seq[byte]](x)
 
 var
   nkNodeKind* = Node()
-    ## node kind node
-    ## structure:
-    ##   name (nkString)
-    ##   data type (t*)
 
   tNone* = Node()
   tString* = Node()
@@ -98,10 +73,8 @@ tString.data = toBytes "store string"
 
 var
   tInt* = Node "store int64"
-  tFloat* = Node "store float64"
 
   nkInt* = nkNodeKind("int", tInt)
-  nkFloat* = nkNodeKind("float", tFloat)
 
   nkError* = nkNodeKind("error", tNone)
     ## structure:
@@ -112,7 +85,6 @@ var
 
 
 converter toNode*(i: int): Node = nkInt{i.int64}
-converter toNode*(i: float): Node = nkFloat{i.float64}
 
 
 iterator items*(x: Node): Node =
@@ -121,22 +93,8 @@ iterator items*(x: Node): Node =
 iterator pairs*(x: Node): (int, Node) =
   for i, x in x.childs: yield (i, x)
 
-proc len*(x: Node): int =
-  x.childs.len
-
-proc `[]`*(x: Node, i: int): var Node =
-  x.childs[i]
-
-
-iterator tree*(x: Node): Node =
-  ## iterates over tree (excluding root)
-  ## ignores if recursion
-  var stack = @[(x: x, h: @[x])]
-  while stack.len != 0:
-    let v = stack[^1]
-    let n = v.x.childs.filterit(it notin v.h)
-    for x in n: yield x
-    stack[^1..^1] = n.mapit((it, v.h & it))
+proc len*(x: Node): int = x.childs.len
+proc `[]`*(x: Node, i: int): var Node = x.childs[i]
 
 
 proc copy*(x: Node, markRecursion: Node = nil): Node =
@@ -165,33 +123,8 @@ proc copy*(x: Node, markRecursion: Node = nil): Node =
     stack[^1..^1] = zip(nx, nn).mapit((it[0], it[1], (v.h.x & it[0], v.h.n & it[1])))
 
 
-proc `==@`*(a, b: Node): bool =
-  ## same tree
-  ## true if trees has same data and kinds for each node
-  if a.kind != b.kind or a.data != b.data or a.childs.len != b.childs.len:
-    return false
-  
-  result = true
-  
-  var stack = @[(a: a, b: b, h: (a: @[a], b: @[b]))]
-  while stack.len != 0:
-    let v = stack[^1]
-    var na, nb: seq[Node]
-    for (a, b) in zip(v.a.childs, v.b.childs):
-      if a in v.h.a: continue
-      if a.kind != b.kind or a.data != b.data or a.childs.len != b.childs.len: return false
-      na.add a
-      nb.add b
-    stack[^1..^1] = zip(na, nb).mapit((it[0], it[1], (v.h.a & it[0], v.h.b & it[1])))
-
-
-proc `&`*(a: Node, b: varargs[Node]): Node =
-  a.kind(a.childs & b.toSeq)
-
-
 proc `$`*(x: Node): string =
   ## builtin node formating
-  ## TODO: make algorithm not recursive and do not use copy
   if x == nil: return "nil"
   if x.kind == nil: return "nil"
   if x.kind == nkRecursion: return "..."
@@ -206,8 +139,6 @@ proc `$`*(x: Node): string =
     elif t == tString:
       result.add " "
       result.addQuoted x.asString
-    elif t == tFloat:
-      result = &"{result} {x.asFloat}"
     elif x.data.len != 0:
       result = &"{result} {x.data}"
   elif x.data.len != 0:
