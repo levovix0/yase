@@ -1,5 +1,5 @@
 
-<img alt="icon" align="left" width="70" src="http://levovix.ru/resources/yase/icon.svg">
+<img alt="icon" align="left" width="110" src="http://levovix.ru/resources/yase/icon.svg">
 <p>
   <h3>Yase: yet another self-editor</h3>
   Self-editor, inspired by  <a href="https://github.com/mastertimer/mutator">mutator</a>
