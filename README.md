@@ -1,8 +1,8 @@
 
-<img alt="icon" align="left" width="110" src="http://levovix.ru/resources/yase/icon.svg">
+<img alt="icon" align="left" width="100" src="http://levovix.ru/resources/yase/icon.svg">
 <p>
   <h3>Yase: yet another self-editor</h3>
-  Self-editor, inspired by  <a href="https://github.com/mastertimer/mutator">mutator</a>
+  Self-editor, inspired by <a href="https://github.com/mastertimer/mutator">mutator</a>
 </p>
 
 ![screenshot](http://levovix.ru/resources/yase/screenshots/0.1.png)
@@ -20,7 +20,7 @@ nimble -d:release build
 ```
 type `h` for help
 
-# Differences of yase and mutator
+# Differences between yase and mutator
 * nodes (tetrons) in yase declared as
   ```nim
   type Node = ref object
