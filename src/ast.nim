@@ -1,4 +1,4 @@
-import tables, hashes, sequtils
+import tables, hashes, sequtils, strutils
 
 {.experimental: "callOperator".}
 
@@ -7,7 +7,7 @@ type
     kind*: Node
     childs*: seq[Node]
     params*: Table[Node, Node]
-    data*: seq[byte]
+    data*: string
     module* {.cursor.}: Module
 
   Module* = ref object
@@ -32,10 +32,10 @@ proc asString*(x: Node): string =
 
 
 proc `{}`*(kind: Node, data: string): Node =
-  Node(kind: kind, data: cast[seq[byte]](data))
+  Node(kind: kind, data: data)
 
 proc `{}`*[T](kind: Node, data: T): Node =
-  Node(kind: kind, data: cast[ptr array[T.sizeof, byte]](data.unsafeaddr)[].`@`)
+  Node(kind: kind, data: cast[ptr array[T.sizeof, char]](data.unsafeaddr)[].`@`.join)
 
 proc `()`*(kind: Node, childs: varargs[Node]): Node =
   Node(kind: kind, childs: childs.toSeq)

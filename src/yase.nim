@@ -20,10 +20,10 @@ nkNodeKind.kind = nkNodeKind
 nkString.childs = @[Node "string", tString]
 
 tNone.kind = nkString
-tNone.data = toBytes "store nothing"
+tNone.data = "store nothing"
 
 tString.kind = nkString
-tString.data = toBytes "store string"
+tString.data = "store string"
 
 
 var
@@ -35,77 +35,6 @@ var
 
 
 converter toNode(i: int): Node = nkInt{i.int64}
-
-
-proc serialize(n: Node, builtinNodes: openarray[Node]): string =
-  var d: Table[Node, int32]
-  var l: seq[Node]
-  for i, n in builtinNodes:
-    d[n] = -i.int32 - 1
-  d[n] = 0
-  l.add n
-
-  var i = 1.int32
-  block collectGraphToTable:
-    var stack = @[(x: n, h: @[n])]
-    while stack.len != 0:
-      let v = stack[^1]
-      let n = v.x.childs.filterit(it notin v.h and it notin builtinNodes)
-      for x in n:
-        if x notin d:
-          d[x] = i
-          inc i
-          l.add x
-      stack[^1..^1] = n.mapit((it, v.h & it))
-
-  proc toString(n: Node): string =
-    let a = @[d[n.kind], n.childs.len.int32, n.data.len.int32] & n.childs.mapit(d[it])
-    result.setLen a.len * int32.sizeof + n.data.len
-    copyMem(result[0].addr, a[0].unsafeaddr, a.len * int32.sizeof)
-    if n.data.len > 0:
-      copyMem(result[a.len * int32.sizeof].addr, n.data[0].unsafeaddr, n.data.len)
-
-  result.add cast[array[16, char]](('y', 'a', 's', 'e', 0.uint32, 0.uint32, i.uint32)).join()
-
-  for i, n in l:
-    result.add n.toString
-
-
-proc deserialize(s: string, builtinNodes: openarray[Node]): Node =
-  if s.len < 16: return
-  let head = cast[ptr tuple[magic: array[4, char], maj, min, n: uint32]](s[0].unsafeaddr)[]
-  if head.magic != ['y', 'a', 's', 'e'] or head.maj != 0 or head.n == 0: return
-
-  var d: Table[int32, Node]
-  for i, n in builtinNodes:
-    d[-i.int32 - 1] = n
-
-  for i in 0.int32..<head.n.int32:
-    d[i] = Node()
-  
-  var ni = 0.int32
-  var i = 16.int32
-  while i < s.len:
-    var head: tuple[k, l, dlen: int32]
-    if i + head.typeof.sizeof > s.len: break
-    copyMem(head.addr, s[i].unsafeaddr, head.typeof.sizeof)
-    inc i, head.typeof.sizeof
-    d[ni].kind = d[head.k]
-    if head.l > 0:
-      d[ni].childs.setLen head.l
-      var i2: seq[int32]
-      i2.setLen head.l
-      copyMem(i2[0].addr, s[i].unsafeaddr, head.l * int32.sizeof)
-      for i, n in i2:
-        d[ni].childs[i] = d[n]
-      inc i, head.l * int32.sizeof
-    if head.dlen > 0:
-      d[ni].data.setLen head.dlen
-      copyMem(d[ni].data[0].addr, s[i].unsafeaddr, head.dlen)
-      inc i, head.dlen
-    inc ni
-
-  return d[0]
 
 
 let
@@ -127,7 +56,6 @@ let
   egStack = Node "global eval stack"
 
 
-var builtinNodes: seq[Node]
 var builtins: Table[Node, proc(x: Node): Node]
 var lets: Table[int, Table[Node, Node]]
 
@@ -362,7 +290,7 @@ builtin stdIntToByte, nkNodeKind("int to byte", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
   let n = x[0].eval
   if n.kind != nkInt: return nkError(erType, x, n)
-  Node(kind: nkSeq, data: @[n.asInt.byte])
+  Node(kind: nkSeq, data: [n.asInt.char].join)
 
 builtin stdByteToInt, nkNodeKind("bytes to ints", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
@@ -388,16 +316,20 @@ builtin stdReadFile, nkNodeKind("read file", tNone):
   try: Node readFile(file)
   except: nkError(erOs, x, nf, getCurrentExceptionMsg())
 
+
+var globalModule: Module
+
 builtin stdSerializeNode, nkNodeKind("serialize node", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
-  let n = x[0].eval
-  n.serialize(builtinNodes)
+  # let n = x[0].eval
+  save1(globalModule)  # temporary
 
 builtin stdDeserializeNode, nkNodeKind("deserialize node", tNone):
   if x.len < 1: return nkError(erIllformedAst, x)
   let n = x[0].eval
-  try: cast[string](n.data).deserialize(builtinNodes)
-  except: nkError(erParse, x, n, getCurrentExceptionMsg())
+  # try: cast[string](n.data).deserialize(builtinNodes)
+  # except: nkError(erParse, x, n, getCurrentExceptionMsg())
+  nkError(erParse, x, n, "TODO")
 
 
 builtin stdAskSelect, nkNodeKind("ask select", tNone):
@@ -566,70 +498,8 @@ builtin godPanel, nkNodeKind("god panel", tNone):
     echo getCurrentExceptionMsg()
     echo getCurrentException().getStackTrace
 
-builtinNodes = @[
-  tInt,
-  tNone,
-  tString,
 
-  nkNodeKind,
-  nkString,
-  nkInt,
-  nkError,
-  nkSeq,
-
-  cNone,
-  cTrue,
-  cFalse,
-
-  egStack,
-  eLet,
-  eIfStmt,
-  eIf,
-  eElse,
-  eSeq,
-  eWhile,
-  eLetLookup,
-
-  erIllformedAst,
-  erIndex,
-  erType,
-  erParse,
-  erOs,
-
-  stdSumInt,
-  stdDataEquals,
-  stdSetData,
-  stdPass,
-  stdEval,
-  stdGet,
-  stdLen,
-  stdKind,
-  stdInsert,
-  stdDelete,
-  stdCopyNode,
-  stdLessInt,
-  stdAskSelect,
-  stdSetKind,
-  stdIdentity,
-  stdReadLine,
-  stdEcho,
-  stdDataLen,
-  stdDataGet,
-  stdDataInsert,
-  stdDataDelete,
-  stdParseInt,
-  stdFormatInt,
-  stdIntToByte,
-  stdByteToInt,
-  stdWriteFile,
-  stdReadFile,
-  stdSerializeNode,
-  stdDeserializeNode,
-
-  godPanel,
-]
-
-macro makeBuiltin2(body: untyped): auto =
+macro makeBuiltin(body: untyped): auto =
   result = nnkTableConstr.newTree(body.mapit(
     if it.kind == nnkCommand:
       nnkExprColonExpr.newTree(
@@ -643,7 +513,7 @@ macro makeBuiltin2(body: untyped): auto =
       )
   ))
 
-var builtinNodes2 = makeBuiltin2:
+var builtinNodes = makeBuiltin:
   tInt
   tNone
   tString
@@ -707,10 +577,10 @@ var builtinNodes2 = makeBuiltin2:
 
 var builtinModule = Module(
   path: "builtin",
-  exported: builtinNodes2.toTable,
+  exported: builtinNodes.toTable,
 )
 
-for (_, x) in builtinNodes2:
+for (_, x) in builtinNodes:
   x.module = builtinModule
 
 
@@ -721,18 +591,17 @@ var yase = newParser:
     var input = opts.input
     if not input.fileExists and (input & ".yase").fileExists:
       input = input & ".yase"
-    # discard input.readFile.deserialize(builtinNodes).eval
 
-    let m = load1(
-      "lib/editor.yase".readFile,
+    globalModule = load1(
+      input.readFile,
       @[
         builtinModule,
       ],
       default_readModule(),
-      "std/editor.yase",
+      input,
     ).m
 
-    discard eval m.root
+    discard eval globalModule.root
 
     # writeFile("lib/editor2.yase", save1(m))
 

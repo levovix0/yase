@@ -26,14 +26,16 @@ type `h` for help
   type Node = ref object
     kind: Node
     childs: seq[Node]
-    data: seq[byte]
+    params: Table[Node, Node]
+    data: string
+    module {.cursor.}: Module
   ```
   when in mutator tetrons declared as hierarchy of types, based on (roughly)
   ```nim
   type
-    Flag = uint64
+    Flags = uint64
     Tetron = ref object of RootObj
-      links: Table[Tetron, Flag]
+      links: Table[Tetron, Flags]
   ```
   (types based on Tetron may have additional data fields)
 
@@ -41,7 +43,7 @@ type `h` for help
 
 - basic yase interpretator writed in Nim, instead of C++
 
-# Other inspirations
+# Inspirations
 
 - [mutator](https://github.com/mastertimer/mutator), the idea of self-editor
 - [Nim](https://nim-lang.org), yase interpretator is written in Nim, also it's just cool language

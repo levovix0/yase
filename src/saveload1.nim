@@ -47,7 +47,7 @@ type
     )
     ids*: seq[Node]
   
-  ModuleNotFound* = object of CatchableError
+  NotFound* = object of CatchableError
   FormatError* = object of CatchableError
 
 
@@ -266,7 +266,7 @@ proc save1*(m: Module, nilNodes: openarray[(string, Node)] = {:}): string =
           result.add serialize(state, v)
         if n.data.len != 0:
           result.add ";"
-          result.add n.data.toString.excapeYase
+          result.add n.data.excapeYase
         result.add ")"
     
     elif n.module == nil:
@@ -426,7 +426,8 @@ proc load1*(
       elif i < s.len and s[i] == ':':
         inc i
         let nId = readStringYase(s, i)
-        modules[ident].exported[nId]
+        try: modules[ident].exported[nId]
+        except: raise NotFound.newException("no such exported node: " & modules[ident].path & ":" & nId)
       else:
         ids[ident]
     
@@ -437,7 +438,7 @@ proc load1*(
       case s[i]
       of ';':  # data
         inc i
-        n.data = cast[seq[byte]](readStringYase(s, i))
+        n.data = readStringYase(s, i)
 
       of ',':  # child or param
         inc i
@@ -547,4 +548,4 @@ proc default_readModule*(
       let p = x / path
       if p.fileExists:
         return p.readFile
-    raise ModuleNotFound.newException("module not found: " & path)
+    raise NotFound.newException("module not found: " & path)
