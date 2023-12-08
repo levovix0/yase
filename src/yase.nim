@@ -1,38 +1,6 @@
 import os, strutils, strformat, sequtils, terminal, unicode, tables, macros, hashes
 import argparse
-
-{.experimental: "callOperator".}
-
-type
-  Node = ref object
-    kind: Node
-    childs: seq[Node]
-    data: seq[byte]
-
-
-proc hash(x: Node): Hash = cast[int](x).hash
-
-
-proc asInt(x: Node): int =
-  if x.data.len == int64.sizeof:
-    cast[ptr int64](x.data[0].addr)[].int
-  else: 0
-
-proc asString(x: Node): string =
-  cast[string](x.data)
-
-
-proc `{}`(kind: Node, data: string): Node =
-  Node(kind: kind, data: cast[seq[byte]](data))
-
-proc `{}`[T](kind: Node, data: T): Node =
-  Node(kind: kind, data: cast[ptr array[T.sizeof, byte]](data.unsafeaddr)[].`@`)
-
-proc `()`(kind: Node, childs: varargs[Node]): Node =
-  Node(kind: kind, childs: childs.toSeq)
-
-
-proc toBytes(x: string): seq[byte] = cast[seq[byte]](x)
+import ast, saveload1
 
 
 var
@@ -108,6 +76,7 @@ proc serialize(n: Node, builtinNodes: openarray[Node]): string =
 
   for i, n in l:
     result.add n.toString
+
 
 proc deserialize(s: string, builtinNodes: openarray[Node]): Node =
   if s.len < 16: return
@@ -499,7 +468,7 @@ builtin godPanel, nkNodeKind("god panel", tNone):
         if x.kind != nil and x.kind.childs.len > 0:
           x.kind.childs[0].asString
         elif x.kind == nil: "nil"
-        elif x.kind.kind == nkString: x.kind.asString
+        elif x.kind.kind == nkString: "\"" & x.kind.asString & "\""
         else: "undocumented Node"
 
       if x.kind != nil and x.kind.childs.len > 1:
@@ -519,8 +488,8 @@ builtin godPanel, nkNodeKind("god panel", tNone):
 
       let id = cast[int](x).toHex
       let w = terminalWidth()
-      var r = " ".repeat(indent).toRunes & result.toRunes & " ".repeat(w - result.runeLen - indent).toRunes
-      result.add " ".repeat(w - result.runeLen - indent)
+      var r = " ".repeat(indent).toRunes & result.toRunes & " ".repeat(max(0, w - result.runeLen - indent)).toRunes
+      result.add " ".repeat(max(0, w - result.runeLen - indent))
       result.insert " ".repeat(indent)
       if w > id.len + 2:
         r[^(id.len)..^1] = id.toRunes
@@ -602,7 +571,7 @@ builtin godPanel, nkNodeKind("god panel", tNone):
 
   except:
     echo getCurrentExceptionMsg()
-    echo getStackTrace()
+    echo getCurrentException().getStackTrace
 
 builtinNodes = @[
   tInt,
@@ -667,6 +636,83 @@ builtinNodes = @[
   godPanel,
 ]
 
+macro makeBuiltin2(body: untyped): auto =
+  result = nnkTableConstr.newTree(body.mapit(
+    if it.kind == nnkCommand:
+      nnkExprColonExpr.newTree(
+        it[1],
+        it[0]
+      )
+    else:
+      nnkExprColonExpr.newTree(
+        newLit $it,
+        it
+      )
+  ))
+
+var builtinNodes2 = makeBuiltin2:
+  tInt
+  tNone
+  tString
+
+  nkNodeKind "nk"
+  nkString "s"
+  nkInt "i"
+  nkError "e"
+  nkSeq "s"
+
+  cNone "n"
+  cTrue "t"
+  cFalse "f"
+
+  egStack
+  eLet
+  eIfStmt
+  eIf
+  eElse
+  eSeq
+  eWhile
+  eLetLookup
+
+  erIllformedAst
+  erIndex
+  erType
+  erParse
+  erOs
+
+  stdSumInt
+  stdDataEquals
+  stdSetData
+  stdPass
+  stdEval
+  stdGet
+  stdLen
+  stdKind
+  stdInsert
+  stdDelete
+  stdCopyNode
+  stdLessInt
+  stdAskSelect
+  stdSetKind
+  stdIdentity
+  stdReadLine
+  stdEcho
+  stdDataLen
+  stdDataGet
+  stdDataInsert
+  stdDataDelete
+  stdParseInt
+  stdFormatInt
+  stdIntToByte
+  stdByteToInt
+  stdWriteFile
+  stdReadFile
+  stdSerializeNode
+  stdDeserializeNode
+
+  godPanel
+
+
 var yase = newParser:
   help("Yet another self-editor")
   arg("input", default=some"main.yase", help="eval file")
@@ -675,6 +721,29 @@ var yase = newParser:
     if not input.fileExists and (input & ".yase").fileExists:
       input = input & ".yase"
     discard input.readFile.deserialize(builtinNodes).eval
+    
+    # let m = Module(
+    #   imports: @[
+    #     (file: "builtin", instance: nil),
+    #   ],
+    # )
+    # let root = input.readFile.deserialize(builtinNodes)
+    
+    # proc impl(x: Node) =
+    #   if x in builtinNodes: return
+    #   if x.module != nil: return
+    #   x.module = m
+    #   impl(x.kind)
+    #   for x in x.childs:
+    #     impl(x)
+    #   for k, v in x.params:
+    #     impl(k)
+    #     impl(v)
+    
+    # impl root
+    # m.root = root
+
+    # writeFile "lib/editor.yase", save1(m, builtinNodes2)
 
 when isMainModule:
   try:

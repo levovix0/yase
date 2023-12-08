@@ -1,0 +1,3 @@
+yase 1.0
+#builtin
+=root=(:stdEcho,(:s;Hello\, World!))
