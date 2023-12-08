@@ -3,18 +3,19 @@ import tables, hashes, sequtils
 {.experimental: "callOperator".}
 
 type
-  Module* = ref object
-    root*: Node
-    exported*: Table[string, Node]
-    imports*: seq[tuple[file: string, instance: Module]]
-    path*: string
-
   Node* = ref object
     kind*: Node
     childs*: seq[Node]
     params*: Table[Node, Node]
     data*: seq[byte]
     module* {.cursor.}: Module
+
+  Module* = ref object
+    root*: Node
+    exported*: Table[string, Node]
+    extendNodes*: seq[Node]
+    imports*: seq[tuple[file: string, instance: Module]]
+    path*: string
 
 
 proc hash*(x: Node): Hash = cast[int](x).hash
@@ -42,3 +43,10 @@ proc `()`*(kind: Node, childs: varargs[Node]): Node =
 
 proc toBytes*(x: string): seq[byte] = cast[seq[byte]](x)
 proc toString*(x: seq[byte]): string = cast[string](x)
+
+
+iterator items*(x: Node): Node =
+  for x in x.childs: yield x
+
+proc len*(x: Node): int = x.childs.len
+proc `[]`*(x: Node, i: int): var Node = x.childs[i]

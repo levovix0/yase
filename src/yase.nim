@@ -37,13 +37,6 @@ var
 converter toNode(i: int): Node = nkInt{i.int64}
 
 
-iterator items(x: Node): Node =
-  for x in x.childs: yield x
-
-proc len(x: Node): int = x.childs.len
-proc `[]`(x: Node, i: int): var Node = x.childs[i]
-
-
 proc serialize(n: Node, builtinNodes: openarray[Node]): string =
   var d: Table[Node, int32]
   var l: seq[Node]
@@ -659,7 +652,7 @@ var builtinNodes2 = makeBuiltin2:
   nkString "s"
   nkInt "i"
   nkError "e"
-  nkSeq "s"
+  nkSeq "a"
 
   cNone "n"
   cTrue "t"
@@ -712,6 +705,14 @@ var builtinNodes2 = makeBuiltin2:
 
   godPanel
 
+var builtinModule = Module(
+  path: "builtin",
+  exported: builtinNodes2.toTable,
+)
+
+for (_, x) in builtinNodes2:
+  x.module = builtinModule
+
 
 var yase = newParser:
   help("Yet another self-editor")
@@ -720,30 +721,20 @@ var yase = newParser:
     var input = opts.input
     if not input.fileExists and (input & ".yase").fileExists:
       input = input & ".yase"
-    discard input.readFile.deserialize(builtinNodes).eval
-    
-    # let m = Module(
-    #   imports: @[
-    #     (file: "builtin", instance: nil),
-    #   ],
-    # )
-    # let root = input.readFile.deserialize(builtinNodes)
-    
-    # proc impl(x: Node) =
-    #   if x in builtinNodes: return
-    #   if x.module != nil: return
-    #   x.module = m
-    #   impl(x.kind)
-    #   for x in x.childs:
-    #     impl(x)
-    #   for k, v in x.params:
-    #     impl(k)
-    #     impl(v)
-    
-    # impl root
-    # m.root = root
+    # discard input.readFile.deserialize(builtinNodes).eval
 
-    # writeFile "lib/editor.yase", save1(m, builtinNodes2)
+    let m = load1(
+      "lib/editor.yase".readFile,
+      @[
+        builtinModule,
+      ],
+      default_readModule(),
+      "std/editor.yase",
+    ).m
+
+    discard eval m.root
+
+    # writeFile("lib/editor2.yase", save1(m))
 
 when isMainModule:
   try:

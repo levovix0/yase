@@ -37,6 +37,17 @@ type `h` for help
   ```
   (types based on Tetron may have additional data fields)
 
-* for now, yase is console program
+- for now, yase is console program
 
-* basic yase interpretator writed in Nim, instead of C++
+- basic yase interpretator writed in Nim, instead of C++
+
+# Other inspirations
+
+- [mutator](https://github.com/mastertimer/mutator), the idea of self-editor
+- [Nim](https://nim-lang.org), yase interpretator is written in Nim, also it's just cool language
+- [lisp](https://en.wikipedia.org/wiki/Lisp_(programming_language)), "abstract syntax tree is all that needed"
+
+# Principles
+- **Be practical** - Simple but not ideal solution that works now is better that complex but ideal solution that will work later. Also, there is no ideal solutions.
+- **Be strange** - Only weird things helps us invent something new.
+- **Write code that writes code** - Automate coding by doing more coding!
